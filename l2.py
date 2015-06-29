@@ -28,7 +28,7 @@ Ryu packet library. Decoder/Encoder implementations of popular protocols like TC
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 
-from ryu.controller import dpset
+from ryu.lib import dpid as dpid_lib
 
 """
 Usage Example:
@@ -167,8 +167,9 @@ class L2Switch(app_manager.RyuApp):
             self.logger.info("port deleted %s", port_no)
         elif reason == ofproto.OFPPR_MODIFY:
             self.logger.info("port modified %s", port_no)
-            self.logger.info("[Ehsan] Sending send_port_stats_request to datapath id : " )
-            #self.send_port_desc_stats_request(dp)
+            dp_str = dpid_lib.dpid_to_str(dp.id)
+            self.logger.info("[Ehsan] Sending send_port_stats_request to datapath id : "+dp_str )
+            self.send_port_desc_stats_request(dp)
         else:
             self.logger.info("Illeagal port state %s %s", port_no, reason)
 
