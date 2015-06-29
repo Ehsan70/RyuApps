@@ -48,6 +48,7 @@ class L2Switch(app_manager.RyuApp):
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
+        self.logger.info("[Ehsan] Received EventOFPSwitchFeatures")
         msg = ev.msg
         self.logger.debug('OFPSwitchFeatures received: '
                           'datapath_id=0x%016x n_buffers=%d '
@@ -166,7 +167,8 @@ class L2Switch(app_manager.RyuApp):
             self.logger.info("port deleted %s", port_no)
         elif reason == ofproto.OFPPR_MODIFY:
             self.logger.info("port modified %s", port_no)
-            self.send_port_stats_request(dp)
+            self.logger.info("[Ehsan] Sending send_port_stats_request to datapath id : " )
+            #self.send_port_desc_stats_request(dp)
         else:
             self.logger.info("Illeagal port state %s %s", port_no, reason)
 
@@ -190,6 +192,7 @@ class L2Switch(app_manager.RyuApp):
 
     @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
     def port_stats_reply_handler(self, ev):
+        self.logger.info("[Ehsan] Received EventOFPPortStatsReply")
         ports = []
         for stat in ev.msg.body:
             ports.append('port_no=%d '
@@ -208,3 +211,24 @@ class L2Switch(app_manager.RyuApp):
                           stat.rx_crc_err, stat.collisions,
                           stat.duration_sec, stat.duration_nsec))
         self.logger.debug('PortStats: %s', ports)
+
+    def send_port_desc_stats_request(self, datapath):
+        ofp_parser = datapath.ofproto_parser
+
+        req = ofp_parser.OFPPortDescStatsRequest(datapath, 0)
+        datapath.send_msg(req)
+
+    @set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
+    def port_desc_stats_reply_handler(self, ev):
+        ports = []
+        for p in ev.msg.body:
+            ports.append('port_no=%d hw_addr=%s name=%s config=0x%08x '
+                         'state=0x%08x curr=0x%08x advertised=0x%08x '
+                         'supported=0x%08x peer=0x%08x curr_speed=%d '
+                         'max_speed=%d' %
+                         (p.port_no, p.hw_addr,
+                          p.name, p.config,
+                          p.state, p.curr, p.advertised,
+                          p.supported, p.peer, p.curr_speed,
+                          p.max_speed))
+        self.logger.debug('OFPPortDescStatsReply received: %s', ports)
