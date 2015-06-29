@@ -1,15 +1,16 @@
 <b>Goal</b>: This file contains the errors I have encountered durring the setup/run of the Ryu applicaitons.
 
-<b>My Environment</b> 
-```shell
+<b>My Environment: </b> I am using SDN hub all-in-one Vm which has the following system characteristics: 
+```
 ubuntu@sdnhubvm:~/code/RyuApp[08:29]$ uname -a
 Linux sdnhubvm 3.13.0-24-generic #47-Ubuntu SMP Fri May 2 23:30:00 UTC 2014 x86_64 x86_64 x86_64 GNU/Linux
 ```
 
+
 ## pkg_resources.VersionConflict
 Probablley one of the packages doesn't match the desired version. 
 
-### Error Appearance
+#### Error Appearance
 ```shell
 ubuntu@sdnhubvm:~/code/RyuApp[08:29]$ sudo ryu-manager ~/code/RyuApp/l2.py
 Traceback (most recent call last):
@@ -26,13 +27,13 @@ Traceback (most recent call last):
 pkg_resources.VersionConflict: (netaddr 0.7.11 (/usr/local/lib/python2.7/dist-packages/netaddr-0.7.11-py2.7.egg), Requirement.parse('netaddr>=0.7.12'))
 ```
 
-### Solution 
+#### Solution 
 I ran 
 ```shell
 sudo pip install -U netaddr six pbr
 ```
 
-### References 
+#### References 
 https://registry.hub.docker.com/u/osrg/ryu/ 
 
 
