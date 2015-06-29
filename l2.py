@@ -1,5 +1,3 @@
-
-
 __author__ = 'Ehsan'
 
 """ ryu.base.app_manager:
@@ -18,6 +16,8 @@ from ryu.controller import ofp_event
 # Version negotiated and sent features-request message
 from ryu.controller.handler import CONFIG_DISPATCHER
 
+from ryu.ofproto import ofproto_v1_3
+
 # Switch-features message received and sent set-config message
 from ryu.controller.handler import MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
@@ -26,48 +26,65 @@ from ryu.controller.handler import set_ev_cls
 Ryu packet library. Decoder/Encoder implementations of popular protocols like TCP/IP.
 """
 from ryu.lib.packet import packet
+from ryu.lib.packet import ethernet
 
-from ryu.lib.mac import haddr_to_bin
-import array
+from ryu.controller import dpset
+
+"""
+Usage Example:
+    1. Run this application:
+    $ sudo ryu-manager --verbose --observe-links ~/code/RyuApp/l2.py
+    2. Join switches (use your favorite method):
+    $ sudo mn --controller=remote --topo linear,2
+"""
+
 
 class L2Switch(app_manager.RyuApp):
+    OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
+
     def __init__(self, *args, **kwargs):
         super(L2Switch, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
-
-    """
-    The controller sends a feature request to the switch upon session establishment.
-    """
-    def send_features_request(self, datapath):
-        ofp_parser = datapath.ofproto_parser
-        req = ofp_parser.OFPFeaturesRequest(datapath)
-        datapath.send_msg(req)
-
-    # The controller sends a get config request to query configuration parameters in the switch.
-    def send_get_config_request(self, datapath):
-        ofp_parser = datapath.ofproto_parser
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         msg = ev.msg
         self.logger.debug('OFPSwitchFeatures received: '
-        'datapath_id=0x%016x n_buffers=%d '
-        'n_tables=%d capabilities=0x%08x ports=%s',
-        msg.datapath_id, msg.n_buffers, msg.n_tables,
-        msg.capabilities, msg.ports)
+                          'datapath_id=0x%016x n_buffers=%d '
+                          'n_tables=%d auxiliary_id=%d '
+                          'capabilities=0x%08x',
+                          msg.datapath_id, msg.n_buffers, msg.n_tables,
+                          msg.auxiliary_id, msg.capabilities)
 
-
-    def add_flow(self, datapath, in_port, dst, actions):
+        datapath = ev.msg.datapath
         ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
 
-        match = datapath.ofproto_parser.OFPMatch(
-            in_port=in_port, dl_dst=haddr_to_bin(dst))
+        # install table-miss flow entry
+        #
+        # We specify NO BUFFER to max_len of the output action due to
+        # OVS bug. At this moment, if we specify a lesser number, e.g.,
+        # 128, OVS will send Packet-In with invalid buffer_id and
+        # truncated packet data. In that case, we cannot output packets
+        # correctly.  The bug has been fixed in OVS v2.1.0.
+        match = parser.OFPMatch()
+        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
+                                          ofproto.OFPCML_NO_BUFFER)]
+        self.add_flow(datapath, 0, match, actions)
 
-        mod = datapath.ofproto_parser.OFPFlowMod(
-            datapath=datapath, match=match, cookie=0,
-            command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
-            priority=ofproto.OFP_DEFAULT_PRIORITY,
-            flags=ofproto.OFPFF_SEND_FLOW_REM, actions=actions)
+    def add_flow(self, datapath, priority, match, actions, buffer_id=None):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
+                                             actions)]
+        if buffer_id:
+            mod = parser.OFPFlowMod(datapath=datapath, buffer_id=buffer_id,
+                                    priority=priority, match=match,
+                                    instructions=inst)
+        else:
+            mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
+                                    match=match, instructions=inst)
         datapath.send_msg(mod)
 
     """
@@ -81,51 +98,64 @@ class L2Switch(app_manager.RyuApp):
         negotiation between Ryu and the switch finishes. Using MAIN_DISPATCHER as the second argument means this function
         is called only after the negotiation completes.
     """
+
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
-    def packet_in_handler(self, ev):
+    def _packet_in_handler(self, ev):
 
-        pkt = packet.Packet(array.array('B', ev.msg.data))
-        for p in pkt.protocols:
-            print p
-        """
-        object that represents a packet_in data structure
-        """
+        # If you hit this you might want to increase
+        # the "miss_send_length" of your switch
+        if ev.msg.msg_len < ev.msg.total_len:
+            self.logger.debug("packet truncated: only %s of %s bytes",
+                              ev.msg.msg_len, ev.msg.total_len)
         msg = ev.msg
+        datapath = msg.datapath
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        in_port = msg.match['in_port']
 
-        """
-        object that represents a datapath (switch)
-        """
-        dp = msg.datapath
+        pkt = packet.Packet(msg.data)
+        eth = pkt.get_protocols(ethernet.ethernet)[0]
 
-        """
-        dp.ofproto and dp.ofproto_parser are objects that represent the OpenFlow protocol that Ryu and the
-        switch negotiated
-        """
-        ofp = dp.ofproto
-        ofp_parser = dp.ofproto_parser
+        dst = eth.dst
+        src = eth.src
 
-        """
-        OFPActionOutput class is used with a packet_out message to specify a switch port that you want to send the
-        packet out of. This application need a switch to send out of all the ports so OFPP_FLOOD constant is used
-        """
-        actions = [ofp_parser.OFPActionOutput(ofp.OFPP_FLOOD)]
+        dpid = datapath.id
+        self.mac_to_port.setdefault(dpid, {})
 
-        """
-        OFPPacketOut class is used to build a packet_out message
-        """
-        out = ofp_parser.OFPPacketOut(
-            datapath=dp, buffer_id=msg.buffer_id, in_port=msg.in_port,
-            actions=actions)
+        self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
 
-        """
-        If you call Datapath class's send_msg method with a OpenFlow message class object, Ryu builds and send the
-        on-wire data format to the switch.
-        """
-        dp.send_msg(out)
+        # learn a mac address to avoid FLOOD next time.
+        self.mac_to_port[dpid][src] = in_port
+
+        if dst in self.mac_to_port[dpid]:
+            out_port = self.mac_to_port[dpid][dst]
+        else:
+            out_port = ofproto.OFPP_FLOOD
+
+        actions = [parser.OFPActionOutput(out_port)]
+
+        # install a flow to avoid packet_in next time
+        if out_port != ofproto.OFPP_FLOOD:
+            match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+            # verify if we have a valid buffer_id, if yes avoid to send both
+            # flow_mod & packet_out
+            if msg.buffer_id != ofproto.OFP_NO_BUFFER:
+                self.add_flow(datapath, 1, match, actions, msg.buffer_id)
+                return
+            else:
+                self.add_flow(datapath, 1, match, actions)
+        data = None
+        if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+            data = msg.data
+
+        out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
+                                  in_port=in_port, actions=actions, data=data)
+        datapath.send_msg(out)
 
     @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
     def _port_status_handler(self, ev):
         msg = ev.msg
+        dp = msg.datapath
         reason = msg.reason
         port_no = msg.desc.port_no
 
@@ -136,5 +166,45 @@ class L2Switch(app_manager.RyuApp):
             self.logger.info("port deleted %s", port_no)
         elif reason == ofproto.OFPPR_MODIFY:
             self.logger.info("port modified %s", port_no)
+            self.send_port_stats_request(dp)
         else:
             self.logger.info("Illeagal port state %s %s", port_no, reason)
+
+    def send_port_stats_request(self, datapath):
+        ofp = datapath.ofproto
+        ofp_parser = datapath.ofproto_parser
+
+        """
+        class ryu.ofproto.ofproto_v1_3_parser.OFPPortStatsRequest(datapath, flags=0, port_no=4294967295, type_=None)
+        Port statistics request message
+
+        The controller uses this message to query information about ports statistics.
+
+        Attribute  |  Description
+        --------------------------
+        flags	   |  Zero or OFPMPF_REQ_MORE
+        port_no	   |  Port number to read (OFPP_ANY to all ports)
+        """
+        req = ofp_parser.OFPPortStatsRequest(datapath, 0, ofp.OFPP_ANY)
+        datapath.send_msg(req)
+
+    @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
+    def port_stats_reply_handler(self, ev):
+        ports = []
+        for stat in ev.msg.body:
+            ports.append('port_no=%d '
+                         'rx_packets=%d tx_packets=%d '
+                         'rx_bytes=%d tx_bytes=%d '
+                         'rx_dropped=%d tx_dropped=%d '
+                         'rx_errors=%d tx_errors=%d '
+                         'rx_frame_err=%d rx_over_err=%d rx_crc_err=%d '
+                         'collisions=%d duration_sec=%d duration_nsec=%d' %
+                         (stat.port_no,
+                          stat.rx_packets, stat.tx_packets,
+                          stat.rx_bytes, stat.tx_bytes,
+                          stat.rx_dropped, stat.tx_dropped,
+                          stat.rx_errors, stat.tx_errors,
+                          stat.rx_frame_err, stat.rx_over_err,
+                          stat.rx_crc_err, stat.collisions,
+                          stat.duration_sec, stat.duration_nsec))
+        self.logger.debug('PortStats: %s', ports)
