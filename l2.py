@@ -37,8 +37,6 @@ Usage Example:
     2. Join switches (use your favorite method):
     $ sudo mn --controller=remote --topo linear,2
 """
-
-
 class L2Switch(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
@@ -50,12 +48,12 @@ class L2Switch(app_manager.RyuApp):
     def switch_features_handler(self, ev):
         self.logger.info("[Ehsan] Received EventOFPSwitchFeatures")
         msg = ev.msg
-        self.logger.debug('OFPSwitchFeatures received: '
-                          'datapath_id=0x%016x n_buffers=%d '
-                          'n_tables=%d auxiliary_id=%d '
-                          'capabilities=0x%08x',
-                          msg.datapath_id, msg.n_buffers, msg.n_tables,
-                          msg.auxiliary_id, msg.capabilities)
+        self.logger.info('OFPSwitchFeatures received: '
+                         '\n\tdatapath_id=0x%016x n_buffers=%d '
+                         '\n\tn_tables=%d auxiliary_id=%d '
+                         '\n\tcapabilities=0x%08x',
+                         msg.datapath_id, msg.n_buffers, msg.n_tables,
+                         msg.auxiliary_id, msg.capabilities)
 
         datapath = ev.msg.datapath
         ofproto = datapath.ofproto
@@ -99,10 +97,9 @@ class L2Switch(app_manager.RyuApp):
         negotiation between Ryu and the switch finishes. Using MAIN_DISPATCHER as the second argument means this function
         is called only after the negotiation completes.
     """
-
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
-
+        #self.logger.info("[Ehsan] Received EventOFPPacketIn")
         # If you hit this you might want to increase
         # the "miss_send_length" of your switch
         if ev.msg.msg_len < ev.msg.total_len:
@@ -123,7 +120,7 @@ class L2Switch(app_manager.RyuApp):
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
 
-        self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+        self.logger.info("\tpacket in %s %s %s %s", dpid, src, dst, in_port)
 
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
@@ -153,8 +150,25 @@ class L2Switch(app_manager.RyuApp):
                                   in_port=in_port, actions=actions, data=data)
         datapath.send_msg(out)
 
+    """
+    EventOFPPortStatus: An event class for switch port status notification.
+    The bellow handles the event.
+    """
     @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
     def _port_status_handler(self, ev):
+        #self.logger.info("[Ehsan] Received EventOFPPortStatus")
+
+        """ Port status message
+        The switch notifies controller of change of ports.
+        Attribute     |     Description
+        --------------------------------
+        reason        |     One of the following values.
+                      |     OFPPR_ADD
+                      |     OFPPR_DELETE
+                      |     OFPPR_MODIFY
+        --------------------------------
+        desc          |     instance of OFPPort
+        """
         msg = ev.msg
         dp = msg.datapath
         reason = msg.reason
@@ -162,16 +176,16 @@ class L2Switch(app_manager.RyuApp):
 
         ofproto = msg.datapath.ofproto
         if reason == ofproto.OFPPR_ADD:
-            self.logger.info("port added %s", port_no)
+            self.logger.info("\tport added %s", port_no)
         elif reason == ofproto.OFPPR_DELETE:
-            self.logger.info("port deleted %s", port_no)
+            self.logger.info("\tport deleted %s", port_no)
         elif reason == ofproto.OFPPR_MODIFY:
-            self.logger.info("port modified %s", port_no)
+            self.logger.info("\tport modified %s", port_no)
             dp_str = dpid_lib.dpid_to_str(dp.id)
-            self.logger.info("[Ehsan] Sending send_port_stats_request to datapath id : "+dp_str )
+            self.logger.info("\t[Ehsan] Sending send_port_desc_stats_request to datapath id : " + dp_str)
             self.send_port_desc_stats_request(dp)
         else:
-            self.logger.info("Illeagal port state %s %s", port_no, reason)
+            self.logger.info("\tIlleagal port state %s %s", port_no, reason)
 
     def send_port_stats_request(self, datapath):
         ofp = datapath.ofproto
@@ -190,28 +204,38 @@ class L2Switch(app_manager.RyuApp):
         """
         req = ofp_parser.OFPPortStatsRequest(datapath, 0, ofp.OFPP_ANY)
         datapath.send_msg(req)
-
+    """
+    Creates an event handler that receives the PortStatsReply message.
+    The bellow handles the event.
+    """
     @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
     def port_stats_reply_handler(self, ev):
-        self.logger.info("[Ehsan] Received EventOFPPortStatsReply")
-        ports = []
+        #self.logger.info("[Ehsan] Received EventOFPPortStatsReply")
+        #self.logger.info('PortStats: \n')
+
+        """ Port statistics reply message
+        The switch responds with this message to a port statistics request.
+
+        Attribute | Description
+        -----------------------
+        body      | List of OFPPortStats instance
+        """
         for stat in ev.msg.body:
-            ports.append('port_no=%d '
-                         'rx_packets=%d tx_packets=%d '
-                         'rx_bytes=%d tx_bytes=%d '
-                         'rx_dropped=%d tx_dropped=%d '
-                         'rx_errors=%d tx_errors=%d '
-                         'rx_frame_err=%d rx_over_err=%d rx_crc_err=%d '
-                         'collisions=%d duration_sec=%d duration_nsec=%d' %
-                         (stat.port_no,
-                          stat.rx_packets, stat.tx_packets,
-                          stat.rx_bytes, stat.tx_bytes,
-                          stat.rx_dropped, stat.tx_dropped,
-                          stat.rx_errors, stat.tx_errors,
-                          stat.rx_frame_err, stat.rx_over_err,
-                          stat.rx_crc_err, stat.collisions,
-                          stat.duration_sec, stat.duration_nsec))
-        self.logger.debug('PortStats: %s', ports)
+            self.logger.info("\tport_no=%d "
+                             "rx_packets=%d tx_packets=%d "
+                             "\n \trx_bytes=%d tx_bytes=%d "
+                             "rx_dropped=%d tx_dropped=%d "
+                             "rx_errors=%d tx_errors=%d "
+                             "\n \trx_frame_err=%d rx_over_err=%d rx_crc_err=%d "
+                             "\n \tcollisions=%d duration_sec=%d duration_nsec=%d" %
+                             (stat.port_no,
+                              stat.rx_packets, stat.tx_packets,
+                              stat.rx_bytes, stat.tx_bytes,
+                              stat.rx_dropped, stat.tx_dropped,
+                              stat.rx_errors, stat.tx_errors,
+                              stat.rx_frame_err, stat.rx_over_err,
+                              stat.rx_crc_err, stat.collisions,
+                              stat.duration_sec, stat.duration_nsec))
 
     def send_port_desc_stats_request(self, datapath):
         ofp_parser = datapath.ofproto_parser
@@ -219,17 +243,27 @@ class L2Switch(app_manager.RyuApp):
         req = ofp_parser.OFPPortDescStatsRequest(datapath, 0)
         datapath.send_msg(req)
 
+    """
+    EventOFPPortDescStatsReply: an event where it is fired when Port description reply message
+    The bellow handles the event.
+    """
     @set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
     def port_desc_stats_reply_handler(self, ev):
-        ports = []
+        #self.logger.info('OFPPortDescStatsReply received: \n')
+        """
+        Port description reply message
+        The switch responds with this message to a port description request.
+        Attribute   |    Description
+        ------------|---------------
+        body        |    List of OFPPortDescStats instance
+        """
         for p in ev.msg.body:
-            ports.append('port_no=%d hw_addr=%s name=%s config=0x%08x '
-                         'state=0x%08x curr=0x%08x advertised=0x%08x '
-                         'supported=0x%08x peer=0x%08x curr_speed=%d '
-                         'max_speed=%d' %
-                         (p.port_no, p.hw_addr,
-                          p.name, p.config,
-                          p.state, p.curr, p.advertised,
-                          p.supported, p.peer, p.curr_speed,
-                          p.max_speed))
-        self.logger.debug('OFPPortDescStatsReply received: %s', ports)
+            self.logger.info("\t port_no=%d hw_addr=%s name=%s config=0x%08x "
+                             "\n \t state=0x%08x curr=0x%08x advertised=0x%08x "
+                             "\n \t supported=0x%08x peer=0x%08x curr_speed=%d "
+                             "max_speed=%d" %
+                             (p.port_no, p.hw_addr,
+                              p.name, p.config,
+                              p.state, p.curr, p.advertised,
+                              p.supported, p.peer, p.curr_speed,
+                              p.max_speed))
