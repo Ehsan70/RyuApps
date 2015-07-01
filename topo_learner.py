@@ -140,6 +140,9 @@ class SimpleSwitch13(app_manager.RyuApp):
     def handler_get_topology_data(self, ev):
         self.get_topology_data()
 
+    """
+    This function determines the links and switches currently in the topology
+    """
     def get_topology_data(self):
         self.logger.info("[Ehsan] Received EventSwitchEnter")
         # Call get_switch() to get the list of objects Switch.
@@ -150,20 +153,23 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         # Call get_link() to get the list of objects Link.
         links_list = get_all_link(self)
-
+        
         # Build a  list with all the links [(srcNode, dstNode, port)].
-        self.topo_shape.topo_links = [((link.src.dpid,link.src.port_no), (link.dst.dpid,link.dst.port_no)) for link in links_list]
+        self.topo_shape.topo_links = [((link.src.dpid,link.src.port_no),
+                                       (link.dst.dpid,link.dst.port_no))
+                                      for link in links_list]
         self.topo_shape.print_links()
         self.topo_shape.print_switches()
 
-
+"""
+This class holds the list of links and switches in the topology and it provides some useful functions
+"""
 class TopoStructure():
     def __init__(self, *args, **kwargs):
+
+        self.topo_raw_links
         self.topo_links = []
         self.topo_switches = []
-        # The below two structure will later be used to save the history of switches and links
-        self.topo_dead_switches = []
-        self.topo_dead_links = []
 
     def print_links(self):
         print("Current Links:")
