@@ -30,12 +30,19 @@ from ryu.lib.packet import ethernet
 
 from ryu.lib import dpid as dpid_lib
 
+
 """
 Usage Example:
     1. Run this application:
     $ sudo ryu-manager --verbose --observe-links ~/code/RyuApp/l2.py
     2. Join switches (use your favorite method):
     $ sudo mn --controller=remote --topo linear,2
+"""
+
+"""
+In order to implement as a Ryu application, ryu.base.app_manager.RyuApp is inherited. Also, to use
+OpenFlow 1.3, the OpenFlow 1.3 version is specified for OFP_VERSIONS.
+The http://osrg.github.io/ryu-book/en/html/switching_hub.html explain similar features pretty good.
 """
 class L2Switch(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -267,3 +274,5 @@ class L2Switch(app_manager.RyuApp):
                               p.state, p.curr, p.advertised,
                               p.supported, p.peer, p.curr_speed,
                               p.max_speed))
+
+
