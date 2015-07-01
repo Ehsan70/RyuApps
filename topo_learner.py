@@ -32,6 +32,7 @@ class SimpleSwitch13(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch13, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
+        self.topo_shape = TopoStructure()
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -145,13 +146,31 @@ class SimpleSwitch13(app_manager.RyuApp):
         switch_list = get_all_switch(self)
 
         # Build a list with all the switches ([switches])
-        topo_switches = [switch.dp.id for switch in switch_list]
+        self.topo_shape.topo_switches = [switch.dp.id for switch in switch_list]
 
         # Call get_link() to get the list of objects Link.
         links_list = get_all_link(self)
 
         # Build a  list with all the links [(srcNode, dstNode, port)].
-        topo_links = [(link.src.dpid,link.dst.dpid,{'port':link.src.port_no}) for link in links_list]
+        self.topo_shape.topo_links = [((link.src.dpid,link.src.port_no), (link.dst.dpid,link.dst.port_no)) for link in links_list]
+        self.topo_shape.print_links()
+        self.topo_shape.print_switches()
 
-        print ("\tLinks: "+str(topo_links))
-        print ("\tSwitches: "+str(topo_switches))
+
+class TopoStructure():
+    def __init__(self, *args, **kwargs):
+        self.topo_links = []
+        self.topo_switches = []
+        # The below two structure will later be used to save the history of switches and links
+        self.topo_dead_switches = []
+        self.topo_dead_links = []
+
+    def print_links(self):
+        print("Current Links:")
+        for l in self.topo_links:
+            print (l)
+
+    def print_switches(self):
+        print("Current Switches")
+        for s in self.topo_switches:
+            print (s)
