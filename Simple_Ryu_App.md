@@ -121,7 +121,7 @@ That event is handled by `port_desc_stats_reply_handler`. The handler is epicted
 In Ryu you receive Events which coresspond to OF messages and then you would have to define handlers for these events. For example in the below code, the `set_ev_cls` is saying use function `switch_features_handler()` as a handler for event `EventOFPSwitchFeatures`. 
 
 ```python
-    @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
+    @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER) # See part 1
     def switch_features_handler(self, ev):
         self.logger.info("[Ehsan] Received EventOFPSwitchFeatures")
         msg = ev.msg
@@ -131,7 +131,8 @@ In Ryu you receive Events which coresspond to OF messages and then you would hav
                          '\n\tcapabilities=0x%08x',
                          msg.datapath_id, msg.n_buffers, msg.n_tables,
                          msg.auxiliary_id, msg.capabilities)
-
+	
+	# See part 2
         datapath = ev.msg.datapath
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -140,7 +141,7 @@ In Ryu you receive Events which coresspond to OF messages and then you would hav
                                           ofproto.OFPCML_NO_BUFFER)]
         self.add_flow(datapath, 0, match, actions)
 ```
-
+#### part 1
 To be more precise, the arguments of `set_ev_cls` are: 
  1. The first argument of the decorator indicates an event that makes function called. As you expect easily, every time Ryu gets a EventOFPSwitchFeatures message, this function is called.
  2. The second argument indicates the state of the switch. For example, if you want to ignore EventOFPSwitchFeatures messages before the negotiation between Ryu and the switch finishes, use MAIN_DISPATCHER. Using MAIN_DISPATCHER means this function is called only after the negotiation completes.
@@ -155,3 +156,11 @@ ryu.controller.handler.CONFIG_DISPATCHER    |	Waiting to receive SwitchFeatures 
 ryu.controller.handler.MAIN_DISPATCHER	    |	Normal status
 ryu.controller.handler.DEAD_DISPATCHER	    |	Disconnection of connection
  
+#### part2
+In `ev.msg`, the instance of the OpenFlow message class corresponding to the event is stored. In this case, it is `ryu.ofproto.ofproto_v1_3_parser.OFPSwitchFeatures`.
+
+In `msg.datapath`, the instance of the `ryu.controller.controller.Datapath` class corresponding to the OpenFlow switch that issued this message is stored.
+
+
+##References: 
+http://osrg.github.io/ryu-book/en/html/switching_hub.html#ch-switching-hub 
