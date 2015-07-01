@@ -1,13 +1,17 @@
 <b>Goal</b>: Controlling Pakcet network using simple Ryu app. 
+
 <b>Requirements:</b>
 A basic knowlege of Ryu and OpenFlow is required. 
 
+<b>Dependencies</b>: This tutorial only uses `l2.py` from the repo.
+
 <b>Environment: </b> I have used the VM from sdn hub, I recommond you do the same. Link for installation is provided below: http://sdnhub.org/tutorials/sdn-tutorial-vm/
 
-<b>Road Map: </b>This document has two sections for setup: 
+<b>Road Map: </b>This document has three sections for setup: 
 
  1. Setup 
  2. Doing tests </br>
+ 3. Details on the code
 
 <b>Notations: </b>
  - `>` means the linuc command line <br>
@@ -111,4 +115,43 @@ That event is handled by `port_desc_stats_reply_handler`. The handler is epicted
                               p.supported, p.peer, p.curr_speed,
                               p.max_speed))
  ```
+ 
+## Details on code
+ 
+In Ryu you receive Events which coresspond to OF messages and then you would have to define handlers for these events. For example in the below code, the `set_ev_cls` is saying use function `switch_features_handler()` as a handler for event `EventOFPSwitchFeatures`. 
+
+```python
+    @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
+    def switch_features_handler(self, ev):
+        self.logger.info("[Ehsan] Received EventOFPSwitchFeatures")
+        msg = ev.msg
+        self.logger.info('OFPSwitchFeatures received: '
+                         '\n\tdatapath_id=0x%016x n_buffers=%d '
+                         '\n\tn_tables=%d auxiliary_id=%d '
+                         '\n\tcapabilities=0x%08x',
+                         msg.datapath_id, msg.n_buffers, msg.n_tables,
+                         msg.auxiliary_id, msg.capabilities)
+
+        datapath = ev.msg.datapath
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        match = parser.OFPMatch()
+        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
+                                          ofproto.OFPCML_NO_BUFFER)]
+        self.add_flow(datapath, 0, match, actions)
+```
+
+To be more precise, the arguments of `set_ev_cls` are: 
+ 1. The first argument of the decorator indicates an event that makes function called. As you expect easily, every time Ryu gets a EventOFPSwitchFeatures message, this function is called.
+ 2. The second argument indicates the state of the switch. For example, if you want to ignore EventOFPSwitchFeatures messages before the negotiation between Ryu and the switch finishes, use MAIN_DISPATCHER. Using MAIN_DISPATCHER means this function is called only after the negotiation completes.
+ 
+
+The seconf argument can have 4 values: 
+
+Definition				    |	Explanation
+--------------------------------------------|-------------------------------------------
+ryu.controller.handler.HANDSHAKE_DISPATCHER |	Exchange of HELLO message
+ryu.controller.handler.CONFIG_DISPATCHER    |	Waiting to receive SwitchFeatures message
+ryu.controller.handler.MAIN_DISPATCHER	    |	Normal status
+ryu.controller.handler.DEAD_DISPATCHER	    |	Disconnection of connection
  
