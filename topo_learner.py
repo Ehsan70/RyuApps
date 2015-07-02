@@ -136,11 +136,10 @@ class SimpleSwitch13(app_manager.RyuApp):
         out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                   in_port=in_port, actions=actions, data=data)
         datapath.send_msg(out)
-
+    ###################################################################################
     """
     The event EventSwitchEnter will trigger the activation of get_topology_data().
     """
-
     @set_ev_cls(event.EventSwitchEnter, [MAIN_DISPATCHER, CONFIG_DISPATCHER])
     def handler_get_topology_data(self, ev):
         self.get_topology_data()
@@ -158,6 +157,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         self.topo_shape.print_links()
         self.topo_shape.print_switches()
 
+    ###################################################################################
     """
     EventOFPPortStatus: An event class for switch port status notification.
     The bellow handles the event.
@@ -165,43 +165,13 @@ class SimpleSwitch13(app_manager.RyuApp):
     @set_ev_cls(dpset.EventPortModify, MAIN_DISPATCHER)
     def _port_modify_handler(self, ev):
         dp = ev.dp
-        port_no = ev.port
+        port_attr = ev.port
         dp_str = dpid_lib.dpid_to_str(dp.id)
-        self.logger.info("\tport modified (%s, %s)", dp_str, port_no)
+        self.logger.info("\n \tport modified (%s, %s)", dp_str, port_attr)
         self.logger.info("\t[Ehsan] Sending send_port_desc_stats_request to datapath id : " + dp_str)
         self.send_port_desc_stats_request(dp)
 
-    def send_port_stats_request(self, datapath):
-        ofp = datapath.ofproto
-        ofp_parser = datapath.ofproto_parser
-        req = ofp_parser.OFPPortStatsRequest(datapath, 0, ofp.OFPP_ANY)
-        datapath.send_msg(req)
-
-    """
-    Creates an event handler that receives the PortStatsReply message.
-    The bellow handles the event.
-    """
-
-    @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
-    def port_stats_reply_handler(self, ev):
-
-        for stat in ev.msg.body:
-            self.logger.info("\tport_no=%d "
-                             "rx_packets=%d tx_packets=%d "
-                             "\n \trx_bytes=%d tx_bytes=%d "
-                             "rx_dropped=%d tx_dropped=%d "
-                             "rx_errors=%d tx_errors=%d "
-                             "\n \trx_frame_err=%d rx_over_err=%d rx_crc_err=%d "
-                             "\n \tcollisions=%d duration_sec=%d duration_nsec=%d" %
-                             (stat.port_no,
-                              stat.rx_packets, stat.tx_packets,
-                              stat.rx_bytes, stat.tx_bytes,
-                              stat.rx_dropped, stat.tx_dropped,
-                              stat.rx_errors, stat.tx_errors,
-                              stat.rx_frame_err, stat.rx_over_err,
-                              stat.rx_crc_err, stat.collisions,
-                              stat.duration_sec, stat.duration_nsec))
-
+    ###################################################################################
     def send_port_desc_stats_request(self, datapath):
         ofp_parser = datapath.ofproto_parser
 
@@ -212,7 +182,6 @@ class SimpleSwitch13(app_manager.RyuApp):
     EventOFPPortDescStatsReply: an event where it is fired when Port description reply message
     The bellow handles the event.
     """
-
     @set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
     def port_desc_stats_reply_handler(self, ev):
 
@@ -228,11 +197,14 @@ class SimpleSwitch13(app_manager.RyuApp):
                               p.state, p.curr, p.advertised,
                               p.supported, p.peer, p.curr_speed,
                               p.max_speed))
-            if p.state == 1 :
+
+            if p.state == 1:
                 print("Bringing the port %d on switch %s down",p.port_no,dp_str)
                 self.topo_shape.bring_down_link(switch_dpid=ev.msg.datapath, port=p.port_no)
                 self.topo_shape.print_links()
 
+    ###################################################################################
+    ###################################################################################
 
 """
 This class holds the list of links and switches in the topology and it provides some useful functions
