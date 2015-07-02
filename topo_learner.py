@@ -141,8 +141,15 @@ class SimpleSwitch13(app_manager.RyuApp):
     The event EventSwitchEnter will trigger the activation of get_topology_data().
     """
     @set_ev_cls(event.EventSwitchEnter, [MAIN_DISPATCHER, CONFIG_DISPATCHER])
-    def handler_get_topology_data(self, ev):
+    def handler_switch_enter(self, ev):
         self.get_topology_data()
+
+    """
+    The event HANDSHAKE will trigger the activation of get_topology_data().
+    """
+    @set_ev_cls(event.EventSwitchLeave, [MAIN_DISPATCHER, CONFIG_DISPATCHER])
+    def handler_switch_leave(self, ev):
+        print ("Switch leaved ")
 
     """
     This function determines the links and switches currently in the topology
