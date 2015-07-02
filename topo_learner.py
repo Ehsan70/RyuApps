@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
@@ -24,6 +23,12 @@ from ryu.lib.packet import ethernet
 
 from ryu.topology import event
 from ryu.topology.api import get_all_switch, get_all_link
+from ryu.lib import dpid as dpid_lib
+from threading import Lock
+from ryu.controller import dpset
+
+UP = 1
+DOWN = 0
 
 
 class SimpleSwitch13(app_manager.RyuApp):
@@ -31,12 +36,22 @@ class SimpleSwitch13(app_manager.RyuApp):
 
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch13, self).__init__(*args, **kwargs)
+        # USed for learning switch functioning
         self.mac_to_port = {}
+        # Holds the topology data and structure
         self.topo_shape = TopoStructure()
 
+    # The state transition: HANDSHAKE -> CONFIG -> MAIN
+    #
+    # HANDSHAKE: if it receives HELLO message with the valid OFP version,
+    # sends Features Request message, and moves to CONFIG.
+    #
+    # CONFIG: it receives Features Reply message and moves to MAIN
+    #
+    # MAIN: it does nothing. Applications are expected to register their
+    # own handlers.
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
-        self.logger.info("[Ehsan] Received EventOFPSwitchFeatures")
         msg = ev.msg
         self.logger.info('OFPSwitchFeatures received: '
                          '\n\tdatapath_id=0x%016x n_buffers=%d '
@@ -71,19 +86,9 @@ class SimpleSwitch13(app_manager.RyuApp):
     """
     This is called when Ryu receives an OpenFlow packet_in message. The trick is set_ev_cls decorator. This decorator
     tells Ryu when the decorated function should be called.
-
-    Arguments of the decorator:
-        1. The first argument of the decorator indicates an event that makes function called. As you expect easily, every time
-        Ryu gets a packet_in message, this function is called.
-        2. The second argument indicates the state of the switch. Probably, you want to ignore packet_in messages before the
-        negotiation between Ryu and the switch finishes. Using MAIN_DISPATCHER as the second argument means this function
-        is called only after the negotiation completes.
     """
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
-        #self.logger.info("[Ehsan] Received EventOFPPacketIn")
-        # If you hit this you might want to increase
-        # the "miss_send_length" of your switch
         if ev.msg.msg_len < ev.msg.total_len:
             self.logger.debug("packet truncated: only %s of %s bytes",
                               ev.msg.msg_len, ev.msg.total_len)
@@ -132,11 +137,11 @@ class SimpleSwitch13(app_manager.RyuApp):
                                   in_port=in_port, actions=actions, data=data)
         datapath.send_msg(out)
 
-
     """
     The event EventSwitchEnter will trigger the activation of get_topology_data().
     """
-    @set_ev_cls(event.EventSwitchEnter, [MAIN_DISPATCHER,CONFIG_DISPATCHER])
+
+    @set_ev_cls(event.EventSwitchEnter, [MAIN_DISPATCHER, CONFIG_DISPATCHER])
     def handler_get_topology_data(self, ev):
         self.get_topology_data()
 
@@ -144,39 +149,170 @@ class SimpleSwitch13(app_manager.RyuApp):
     This function determines the links and switches currently in the topology
     """
     def get_topology_data(self):
-        self.logger.info("[Ehsan] Received EventSwitchEnter")
         # Call get_switch() to get the list of objects Switch.
-        switch_list = get_all_switch(self)
-
-        # Build a list with all the switches ([switches])
-        self.topo_shape.topo_switches = [switch.dp.id for switch in switch_list]
+        self.topo_shape.topo_raw_switches = get_all_switch(self)
 
         # Call get_link() to get the list of objects Link.
-        links_list = get_all_link(self)
-        
-        # Build a  list with all the links [(srcNode, dstNode, port)].
-        self.topo_shape.topo_links = [((link.src.dpid,link.src.port_no),
-                                       (link.dst.dpid,link.dst.port_no))
-                                      for link in links_list]
+        self.topo_shape.topo_raw_links = get_all_link(self)
+
         self.topo_shape.print_links()
         self.topo_shape.print_switches()
+
+    """
+    EventOFPPortStatus: An event class for switch port status notification.
+    The bellow handles the event.
+    """
+    @set_ev_cls(dpset.EventPortModify, MAIN_DISPATCHER)
+    def _port_modify_handler(self, ev):
+        dp = ev.dp
+        port_no = ev.port
+        dp_str = dpid_lib.dpid_to_str(dp.id)
+        self.logger.info("\tport modified (%s, %s)", dp_str, port_no)
+        self.logger.info("\t[Ehsan] Sending send_port_desc_stats_request to datapath id : " + dp_str)
+        self.send_port_desc_stats_request(dp)
+
+    def send_port_stats_request(self, datapath):
+        ofp = datapath.ofproto
+        ofp_parser = datapath.ofproto_parser
+        req = ofp_parser.OFPPortStatsRequest(datapath, 0, ofp.OFPP_ANY)
+        datapath.send_msg(req)
+
+    """
+    Creates an event handler that receives the PortStatsReply message.
+    The bellow handles the event.
+    """
+
+    @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
+    def port_stats_reply_handler(self, ev):
+
+        for stat in ev.msg.body:
+            self.logger.info("\tport_no=%d "
+                             "rx_packets=%d tx_packets=%d "
+                             "\n \trx_bytes=%d tx_bytes=%d "
+                             "rx_dropped=%d tx_dropped=%d "
+                             "rx_errors=%d tx_errors=%d "
+                             "\n \trx_frame_err=%d rx_over_err=%d rx_crc_err=%d "
+                             "\n \tcollisions=%d duration_sec=%d duration_nsec=%d" %
+                             (stat.port_no,
+                              stat.rx_packets, stat.tx_packets,
+                              stat.rx_bytes, stat.tx_bytes,
+                              stat.rx_dropped, stat.tx_dropped,
+                              stat.rx_errors, stat.tx_errors,
+                              stat.rx_frame_err, stat.rx_over_err,
+                              stat.rx_crc_err, stat.collisions,
+                              stat.duration_sec, stat.duration_nsec))
+
+    def send_port_desc_stats_request(self, datapath):
+        ofp_parser = datapath.ofproto_parser
+
+        req = ofp_parser.OFPPortDescStatsRequest(datapath, 0)
+        datapath.send_msg(req)
+
+    """
+    EventOFPPortDescStatsReply: an event where it is fired when Port description reply message
+    The bellow handles the event.
+    """
+
+    @set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
+    def port_desc_stats_reply_handler(self, ev):
+
+        dp_str = dpid_lib.dpid_to_str(ev.msg.datapath.id)
+        for p in ev.msg.body:
+            self.logger.info("\t ***switch dpid=%s"
+                             "\n \t port_no=%d hw_addr=%s name=%s config=0x%08x "
+                             "\n \t state=0x%08x curr=0x%08x advertised=0x%08x "
+                             "\n \t supported=0x%08x peer=0x%08x curr_speed=%d "
+                             "max_speed=%d" %
+                             (dp_str, p.port_no, p.hw_addr,
+                              p.name, p.config,
+                              p.state, p.curr, p.advertised,
+                              p.supported, p.peer, p.curr_speed,
+                              p.max_speed))
+            if p.state == 1 :
+                print("Bringing the port %d on switch %s down",p.port_no,dp_str)
+                self.topo_shape.bring_down_link(switch_dpid=ev.msg.datapath, port=p.port_no)
+                self.topo_shape.print_links()
+
 
 """
 This class holds the list of links and switches in the topology and it provides some useful functions
 """
 class TopoStructure():
     def __init__(self, *args, **kwargs):
-
-        self.topo_raw_links
+        self.topo_raw_switches = []
+        self.topo_raw_links = []
         self.topo_links = []
+        # contains tuples of switches and their state. The state is either up (1) or down (2)
         self.topo_switches = []
+        self.lock = Lock()
 
     def print_links(self):
+        # Convert the raw link to list so that it is printed easily
+        self.convert_raw_links_to_list()
         print("Current Links:")
         for l in self.topo_links:
             print (l)
 
     def print_switches(self):
+        self.convert_raw_switch_to_list()
         print("Current Switches")
         for s in self.topo_switches:
             print (s)
+
+    def convert_raw_links_to_list(self):
+        # Build a  list with all the links [((srcNode,port), (dstNode, port))].
+        # The list is easier for printing.
+        self.lock.acquire()
+        self.topo_links = [((link.src.dpid, link.src.port_no),
+                            (link.dst.dpid, link.dst.port_no))
+                           for link in self.topo_raw_links]
+        self.lock.release()
+
+    def convert_raw_switch_to_list(self):
+        # Build a list with all the switches ([switches])
+        self.lock.acquire()
+        self.topo_switches = [(switch.dp.id, UP) for switch in self.topo_raw_switches]
+        self.lock.release()
+
+    def bring_down_link(self, switch_dpid, port):
+        if port < 1 or switch_dpid < 0:
+            raise ValueError
+        # if a port goes down, remove all the links that have the port as their src or dst.
+        self.lock.acquire()
+        for i, link in enumerate(self.topo_raw_links):
+            if link.src.dpid == switch_dpid and link.src.port_no == port and not self.topo_raw_links:
+                print "The link is in here"
+                del (self.topo_raw_links[i])
+            elif link.dst.dpid == switch_dpid and link.dst.port_no == port and not self.topo_raw_links:
+                print "The link is in here2"
+                del (self.topo_raw_links[i])
+        self.lock.release()
+    """
+    def bring_down_link(self, del_link):
+        # if a port goes down, remove all the links that have the port as their src or dst.
+        if del_link in self.topo_raw_links:
+            print "The link is in here"
+            self.topo_raw_links.remove(del_link)
+    """
+    """
+    Adds the link to list of raw links
+    """
+    def bring_up_link(self, link):
+        self.topo_raw_links.append(link)
+
+    """
+    Check if a link with specific nodes exists.
+    """
+    def check_link(self,sdpid, sport, ddpid, dport):
+        for i, link in self.topo_raw_links:
+            if ((sdpid, sport), (ddpid, dport)) == ((link.src.dpid, link.src.port_no), (link.dst.dpid, link.dst.port_no)):
+                return True
+        return False
+
+
+
+"""
+        for i, ((d1, q1), (d2, q2)) in enumerate(self.topo_links):
+            if (d1 == switch_dpid and q1 == port) or (d2 == switch_dpid and q2 == port):
+                del(self.topo_links[i])
+"""
