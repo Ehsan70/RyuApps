@@ -154,7 +154,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         # Call get_link() to get the list of objects Link.
         self.topo_shape.topo_raw_links = get_all_link(self)
 
-        self.topo_shape.print_links()
+        self.topo_shape.print_links("get_topology_data")
         self.topo_shape.print_switches()
 
     ###################################################################################
@@ -167,7 +167,15 @@ class SimpleSwitch13(app_manager.RyuApp):
         dp = ev.dp
         port_attr = ev.port
         dp_str = dpid_lib.dpid_to_str(dp.id)
-        self.logger.info("\n \tport modified (%s, %s)", dp_str, port_attr)
+        self.logger.info("\t ***switch dpid=%s"
+                         "\n \t port_no=%d hw_addr=%s name=%s config=0x%08x "
+                         "\n \t state=0x%08x curr=0x%08x advertised=0x%08x "
+                         "\n \t supported=0x%08x peer=0x%08x curr_speed=%d max_speed=%d" %
+                         (dp_str, port_attr.port_no, port_attr.hw_addr,
+                          port_attr.name, port_attr.config,
+                          port_attr.state, port_attr.curr, port_attr.advertised,
+                          port_attr.supported, port_attr.peer, port_attr.curr_speed,
+                          port_attr.max_speed))
         self.logger.info("\t[Ehsan] Sending send_port_desc_stats_request to datapath id : " + dp_str)
         self.send_port_desc_stats_request(dp)
 
@@ -201,7 +209,7 @@ class SimpleSwitch13(app_manager.RyuApp):
             if p.state == 1:
                 print("Bringing the port %d on switch %s down",p.port_no,dp_str)
                 self.topo_shape.bring_down_link(switch_dpid=ev.msg.datapath, port=p.port_no)
-                self.topo_shape.print_links()
+                self.topo_shape.print_links("port_desc_stats_reply_handler")
 
     ###################################################################################
     ###################################################################################
@@ -218,14 +226,15 @@ class TopoStructure():
         self.topo_switches = []
         self.lock = Lock()
 
-    def print_links(self):
+    def print_links(self, func_str=None):
         # Convert the raw link to list so that it is printed easily
         self.convert_raw_links_to_list()
-        print("Current Links:")
+        print("\t"+func_str+": Current Links:")
         for l in self.topo_links:
-            print (l)
+            print ("\t"+str(l))
 
     def print_switches(self):
+        # Todo:  do the same thing you did to print_links()
         self.convert_raw_switch_to_list()
         print("Current Switches")
         for s in self.topo_switches:
