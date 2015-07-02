@@ -215,7 +215,7 @@ class SimpleSwitch13(app_manager.RyuApp):
 
             if p.state == 1:
                 print("Bringing the port %d on switch %s down",p.port_no,dp_str)
-                self.topo_shape.bring_down_link(switch_dpid=ev.msg.datapath, port=p.port_no)
+                self.topo_shape.bring_down_link(switch_dp=ev.msg.datapath, port=p.port_no)
                 self.topo_shape.print_links("port_desc_stats_reply_handler")
 
     ###################################################################################
@@ -229,6 +229,9 @@ class TopoStructure():
         self.topo_raw_switches = []
         self.topo_raw_links = []
         self.topo_links = []
+
+        self.topo_removed_links = []
+
         # contains tuples of switches and their state. The state is either up (1) or down (2)
         self.topo_switches = []
         self.lock = Lock()
@@ -262,16 +265,18 @@ class TopoStructure():
         self.topo_switches = [(switch.dp.id, UP) for switch in self.topo_raw_switches]
         self.lock.release()
 
-    def bring_down_link(self, switch_dpid, port):
-        if port < 1 or switch_dpid < 0:
+    def bring_down_link(self, switch_dp, port):
+        # Todo Need to fix this
+        print "in bring_down_link"+str(switch_dp.id)
+        if port < 1 or switch_dp < 0:
             raise ValueError
         # if a port goes down, remove all the links that have the port as their src or dst.
         self.lock.acquire()
         for i, link in enumerate(self.topo_raw_links):
-            if link.src.dpid == switch_dpid and link.src.port_no == port and not self.topo_raw_links:
+            if link.src.dpid == switch_dp.id and link.src.port_no == port and not self.topo_raw_links:
                 print "The link is in here"
                 del (self.topo_raw_links[i])
-            elif link.dst.dpid == switch_dpid and link.dst.port_no == port and not self.topo_raw_links:
+            elif link.dst.dpid == switch_dp.id and link.dst.port_no == port and not self.topo_raw_links:
                 print "The link is in here2"
                 del (self.topo_raw_links[i])
         self.lock.release()
