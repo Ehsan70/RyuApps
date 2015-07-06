@@ -15,7 +15,7 @@
 
 from ryu.base import app_manager
 from ryu.controller import ofp_event
-from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
+from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, DEAD_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
@@ -26,7 +26,7 @@ from ryu.topology.api import get_all_switch, get_all_link
 from ryu.lib import dpid as dpid_lib
 from threading import Lock
 from ryu.controller import dpset
-
+import time
 UP = 1
 DOWN = 0
 
@@ -144,12 +144,10 @@ class SimpleSwitch13(app_manager.RyuApp):
     def handler_switch_enter(self, ev):
         self.get_topology_data()
 
-    """
-    The event HANDSHAKE will trigger the activation of get_topology_data().
-    """
-    @set_ev_cls(event.EventSwitchLeave, [MAIN_DISPATCHER, CONFIG_DISPATCHER])
+
+    @set_ev_cls(event.EventSwitchLeave, [MAIN_DISPATCHER, CONFIG_DISPATCHER, DEAD_DISPATCHER])
     def handler_switch_leave(self, ev):
-        print ("Switch leaved ")
+        self.logger.info("Not tracking Switches, switch leaved.")
 
     """
     This function determines the links and switches currently in the topology
@@ -162,7 +160,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         self.topo_shape.topo_raw_links = get_all_link(self)
 
         self.topo_shape.print_links("get_topology_data")
-        self.topo_shape.print_switches()
+        self.topo_shape.print_switches("get_topology_data")
 
     ###################################################################################
     """
@@ -170,10 +168,8 @@ class SimpleSwitch13(app_manager.RyuApp):
     The bellow handles the event.
     """
     @set_ev_cls(dpset.EventPortModify, MAIN_DISPATCHER)
-    def _port_modify_handler(self, ev):
-        print (str(ev.dp))
+    def port_modify_handler(self, ev):
         dp = ev.dp
-        print(ev.port)
         port_attr = ev.port
         dp_str = dpid_lib.dpid_to_str(dp.id)
         self.logger.info("\t ***switch dpid=%s"
@@ -186,9 +182,11 @@ class SimpleSwitch13(app_manager.RyuApp):
                           port_attr.supported, port_attr.peer, port_attr.curr_speed,
                           port_attr.max_speed))
         if port_attr.state == 1:
-                self.topo_shape.bring_down_link(switch_dp=dp.id, port=port_attr.port_no)
-
+            self.topo_shape.print_links("Link Down")
+        elif port_attr.state == 0:
+            self.topo_shape.print_links("Link Up")
     ###################################################################################
+
     def send_port_desc_stats_request(self, datapath):
         ofp_parser = datapath.ofproto_parser
 
@@ -215,7 +213,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                               p.max_speed))
 
             if p.state == 1:
-                self.topo_shape.bring_down_link(switch_dp=ev.msg.datapath, port=p.port_no)
+                self.topo_shape.print_links("bring_down_link ")
 
     ###################################################################################
     ###################################################################################
@@ -237,17 +235,14 @@ class TopoStructure():
 
     def print_links(self, func_str=None):
         # Convert the raw link to list so that it is printed easily
-        self.convert_raw_links_to_list()
-        print("\t"+func_str+": Current Links:")
+        print(" \t"+str(func_str)+": Current Links:")
         for l in self.topo_raw_links:
-            print ("\t"+str(l))
+            print (" \t\t"+str(l))
 
-    def print_switches(self):
-        # Todo:  do the same thing you did to print_links()
-        self.convert_raw_switch_to_list()
-        print("Current Switches")
-        for s in self.topo_switches:
-            print (s)
+    def print_switches(self, func_str=None):
+        print(" \t"+str(func_str)+": Current Switches:")
+        for s in self.topo_raw_switches:
+            print (" \t\t"+str(s))
 
     def convert_raw_links_to_list(self):
         # Build a  list with all the links [((srcNode,port), (dstNode, port))].
@@ -263,10 +258,6 @@ class TopoStructure():
         self.lock.acquire()
         self.topo_switches = [(switch.dp.id, UP) for switch in self.topo_raw_switches]
         self.lock.release()
-
-    def bring_down_link(self, switch_dp, port):
-        # Todo Need to fix this
-        self.print_links("bring_down_link ")
 
     """
     Adds the link to list of raw links
