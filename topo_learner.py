@@ -186,11 +186,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                           port_attr.supported, port_attr.peer, port_attr.curr_speed,
                           port_attr.max_speed))
         if port_attr.state == 1:
-                print("Bringing the port %d on switch %s down", port_attr.port_no, dp_str)
                 self.topo_shape.bring_down_link(switch_dp=dp.id, port=port_attr.port_no)
-                self.topo_shape.print_links("EventPortModify")
-        #self.logger.info("\t[Ehsan] Sending send_port_desc_stats_request to datapath id : " + dp_str)
-        #self.send_port_desc_stats_request(dp)
 
     ###################################################################################
     def send_port_desc_stats_request(self, datapath):
@@ -205,7 +201,6 @@ class SimpleSwitch13(app_manager.RyuApp):
     """
     #@set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
     def port_desc_stats_reply_handler(self, ev):
-
         dp_str = dpid_lib.dpid_to_str(ev.msg.datapath.id)
         for p in ev.msg.body:
             self.logger.info("\t ***switch dpid=%s"
@@ -220,9 +215,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                               p.max_speed))
 
             if p.state == 1:
-                print("Bringing the port %d on switch %s down",p.port_no,dp_str)
                 self.topo_shape.bring_down_link(switch_dp=ev.msg.datapath, port=p.port_no)
-                self.topo_shape.print_links("port_desc_stats_reply_handler")
 
     ###################################################################################
     ###################################################################################
@@ -273,16 +266,8 @@ class TopoStructure():
 
     def bring_down_link(self, switch_dp, port):
         # Todo Need to fix this
-        self.print_links("bring_down_link "+str(switch_dp)+"  ")
+        self.print_links("bring_down_link ")
 
-        #self.lock.release()
-    """
-    def bring_down_link(self, del_link):
-        # if a port goes down, remove all the links that have the port as their src or dst.
-        if del_link in self.topo_raw_links:
-            print "The link is in here"
-            self.topo_raw_links.remove(del_link)
-    """
     """
     Adds the link to list of raw links
     """
@@ -297,11 +282,3 @@ class TopoStructure():
             if ((sdpid, sport), (ddpid, dport)) == ((link.src.dpid, link.src.port_no), (link.dst.dpid, link.dst.port_no)):
                 return True
         return False
-
-
-
-"""
-        for i, ((d1, q1), (d2, q2)) in enumerate(self.topo_links):
-            if (d1 == switch_dpid and q1 == port) or (d2 == switch_dpid and q2 == port):
-                del(self.topo_links[i])
-"""
