@@ -171,7 +171,9 @@ class SimpleSwitch13(app_manager.RyuApp):
     """
     @set_ev_cls(dpset.EventPortModify, MAIN_DISPATCHER)
     def _port_modify_handler(self, ev):
+        print (str(ev.dp))
         dp = ev.dp
+        print(ev.port)
         port_attr = ev.port
         dp_str = dpid_lib.dpid_to_str(dp.id)
         self.logger.info("\t ***switch dpid=%s"
@@ -183,8 +185,12 @@ class SimpleSwitch13(app_manager.RyuApp):
                           port_attr.state, port_attr.curr, port_attr.advertised,
                           port_attr.supported, port_attr.peer, port_attr.curr_speed,
                           port_attr.max_speed))
-        self.logger.info("\t[Ehsan] Sending send_port_desc_stats_request to datapath id : " + dp_str)
-        self.send_port_desc_stats_request(dp)
+        if port_attr.state == 1:
+                print("Bringing the port %d on switch %s down", port_attr.port_no, dp_str)
+                self.topo_shape.bring_down_link(switch_dp=dp.id, port=port_attr.port_no)
+                self.topo_shape.print_links("EventPortModify")
+        #self.logger.info("\t[Ehsan] Sending send_port_desc_stats_request to datapath id : " + dp_str)
+        #self.send_port_desc_stats_request(dp)
 
     ###################################################################################
     def send_port_desc_stats_request(self, datapath):
@@ -197,7 +203,7 @@ class SimpleSwitch13(app_manager.RyuApp):
     EventOFPPortDescStatsReply: an event where it is fired when Port description reply message
     The bellow handles the event.
     """
-    @set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
+    #@set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
     def port_desc_stats_reply_handler(self, ev):
 
         dp_str = dpid_lib.dpid_to_str(ev.msg.datapath.id)
@@ -240,7 +246,7 @@ class TopoStructure():
         # Convert the raw link to list so that it is printed easily
         self.convert_raw_links_to_list()
         print("\t"+func_str+": Current Links:")
-        for l in self.topo_links:
+        for l in self.topo_raw_links:
             print ("\t"+str(l))
 
     def print_switches(self):
@@ -267,19 +273,9 @@ class TopoStructure():
 
     def bring_down_link(self, switch_dp, port):
         # Todo Need to fix this
-        print "in bring_down_link"+str(switch_dp.id)
-        if port < 1 or switch_dp < 0:
-            raise ValueError
-        # if a port goes down, remove all the links that have the port as their src or dst.
-        self.lock.acquire()
-        for i, link in enumerate(self.topo_raw_links):
-            if link.src.dpid == switch_dp.id and link.src.port_no == port and not self.topo_raw_links:
-                print "The link is in here"
-                del (self.topo_raw_links[i])
-            elif link.dst.dpid == switch_dp.id and link.dst.port_no == port and not self.topo_raw_links:
-                print "The link is in here2"
-                del (self.topo_raw_links[i])
-        self.lock.release()
+        self.print_links("bring_down_link "+str(switch_dp)+"  ")
+
+        #self.lock.release()
     """
     def bring_down_link(self, del_link):
         # if a port goes down, remove all the links that have the port as their src or dst.
