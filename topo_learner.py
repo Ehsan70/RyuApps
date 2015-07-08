@@ -22,10 +22,10 @@ from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 
 from ryu.topology import event
-from ryu.topology.api import get_all_switch, get_all_link
+from ryu.topology.api import get_all_switch, get_all_link, get_switch, get_link
 from ryu.lib import dpid as dpid_lib
 from ryu.controller import dpset
-import networkx as nx
+import copy
 UP = 1
 DOWN = 0
 
@@ -139,9 +139,13 @@ class SimpleSwitch13(app_manager.RyuApp):
     """
     The event EventSwitchEnter will trigger the activation of get_topology_data().
     """
-    @set_ev_cls(event.EventSwitchEnter, [MAIN_DISPATCHER, CONFIG_DISPATCHER])
+    @set_ev_cls(event.EventSwitchEnter)
     def handler_switch_enter(self, ev):
-        self.get_topology_data()
+        self.topo_shape.topo_raw_switches = copy.copy(get_switch(self,None))
+        self.topo_shape.topo_raw_links = copy.copy(get_link(self,None))
+
+        self.topo_shape.print_links("EventSwitchEnter")
+        self.topo_shape.print_switches("EventSwitchEnter")
 
 
     @set_ev_cls(event.EventSwitchLeave, [MAIN_DISPATCHER, CONFIG_DISPATCHER, DEAD_DISPATCHER])
@@ -153,10 +157,10 @@ class SimpleSwitch13(app_manager.RyuApp):
     """
     def get_topology_data(self):
         # Call get_switch() to get the list of objects Switch.
-        self.topo_shape.topo_raw_switches = get_all_switch(self)
+        self.topo_shape.topo_raw_switches = copy.copy(get_all_switch(self))
 
         # Call get_link() to get the list of objects Link.
-        self.topo_shape.topo_raw_links = get_all_link(self)
+        self.topo_shape.topo_raw_links = copy.copy(get_all_link(self))
 
         self.topo_shape.print_links("get_topology_data")
         self.topo_shape.print_switches("get_topology_data")
@@ -183,40 +187,13 @@ class SimpleSwitch13(app_manager.RyuApp):
         if port_attr.state == 1:
             self.topo_shape.print_links("Link Down")
             out = self.topo_shape.link_with_src_port(port_attr.port_no, dp.id)
-            print out
-            print(self.topo_shape.find_shortest_path(out.src.dpid))
+            print "out"+str(out)
+            if out is not None:
+                print(self.topo_shape.find_shortest_path(out.src.dpid))
         elif port_attr.state == 0:
             self.topo_shape.print_links("Link Up")
 
-    ###################################################################################
 
-    def send_port_desc_stats_request(self, datapath):
-        ofp_parser = datapath.ofproto_parser
-
-        req = ofp_parser.OFPPortDescStatsRequest(datapath, 0)
-        datapath.send_msg(req)
-
-    """
-    EventOFPPortDescStatsReply: an event where it is fired when Port description reply message
-    The bellow handles the event.
-    """
-    #@set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
-    def port_desc_stats_reply_handler(self, ev):
-        dp_str = dpid_lib.dpid_to_str(ev.msg.datapath.id)
-        for p in ev.msg.body:
-            self.logger.info("\t ***switch dpid=%s"
-                             "\n \t port_no=%d hw_addr=%s name=%s config=0x%08x "
-                             "\n \t state=0x%08x curr=0x%08x advertised=0x%08x "
-                             "\n \t supported=0x%08x peer=0x%08x curr_speed=%d "
-                             "max_speed=%d" %
-                             (dp_str, p.port_no, p.hw_addr,
-                              p.name, p.config,
-                              p.state, p.curr, p.advertised,
-                              p.supported, p.peer, p.curr_speed,
-                              p.max_speed))
-
-            if p.state == 1:
-                self.topo_shape.print_links("bring_down_link ")
 
     ###################################################################################
     ###################################################################################
@@ -229,8 +206,6 @@ class TopoStructure():
         self.topo_raw_switches = []
         self.topo_raw_links = []
         self.topo_links = []
-
-        self.net = nx.DiGraph()
 
     def print_links(self, func_str=None):
         # Convert the raw link to list so that it is printed easily
@@ -284,16 +259,28 @@ class TopoStructure():
         s_count = self.switches_count()
         s_temp = s
         visited = []
-        shortest_path = [0 for s_dpid in range(1, s_count)]
+        shortest_path = {}
 
         while s_count != len(visited):
+            print  visited
             visited.append(s_temp)
+            print visited
+            print ("s_temp 1: " + str(s_temp))
             for l in self.find_links_with_src(s_temp):
+                print "\t"+str(l)
                 if l.dst.dpid not in visited:
-                    print (l.dst.dpid)
-                    shortest_path[l.dst.dpid] += 1
-
-            s_temp = shortest_path.index(min(shortest_path))
+                    print ("\t\tDPID dst: "+ str(l.dst.dpid))
+                    if l.src.dpid in shortest_path:
+                        shortest_path[l.dst.dpid] = shortest_path[l.dst.dpid] + 1
+                        print("\t\t\tdpid found. Count: "+str(shortest_path[l.dst.dpid]))
+                    else:
+                        print("\t\t\tdpid not found.")
+                        shortest_path[l.dst.dpid] = 0
+            print ("shortest_path: "+str(shortest_path))
+            min_val = min(shortest_path.itervalues())
+            t = [k for k,v in shortest_path.iteritems() if v == min_val]
+            s_temp = t[0]
+            print  "s_temp 2: " + str(s_temp)+"\n"
         return shortest_path
 
     """
