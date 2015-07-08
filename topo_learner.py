@@ -26,7 +26,7 @@ from ryu.topology.api import get_all_switch, get_all_link
 from ryu.lib import dpid as dpid_lib
 from threading import Lock
 from ryu.controller import dpset
-import time
+import networkx as nx
 UP = 1
 DOWN = 0
 
@@ -158,7 +158,10 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         # Call get_link() to get the list of objects Link.
         self.topo_shape.topo_raw_links = get_all_link(self)
-
+        #self.topo_shape.net.add_nodes_from(self.topo_shape.topo_raw_switches)
+        #self.topo_shape.net.add_edges_from(self.topo_shape.topo_raw_links)
+        #self.logger.info("Nods: ")
+        #print (self.topo_shape.net.nodes())
         self.topo_shape.print_links("get_topology_data")
         self.topo_shape.print_switches("get_topology_data")
 
@@ -183,8 +186,10 @@ class SimpleSwitch13(app_manager.RyuApp):
                           port_attr.max_speed))
         if port_attr.state == 1:
             self.topo_shape.print_links("Link Down")
+            print(self.topo_shape.find_shortest_path(self.topo_shape.link_with_src_port(port_attr.port_no, dp)))
         elif port_attr.state == 0:
             self.topo_shape.print_links("Link Up")
+
     ###################################################################################
 
     def send_port_desc_stats_request(self, datapath):
@@ -227,11 +232,7 @@ class TopoStructure():
         self.topo_raw_links = []
         self.topo_links = []
 
-        self.topo_removed_links = []
-
-        # contains tuples of switches and their state. The state is either up (1) or down (2)
-        self.topo_switches = []
-        self.lock = Lock()
+        self.net = nx.DiGraph()
 
     def print_links(self, func_str=None):
         # Convert the raw link to list so that it is printed easily
@@ -243,6 +244,9 @@ class TopoStructure():
         print(" \t"+str(func_str)+": Current Switches:")
         for s in self.topo_raw_switches:
             print (" \t\t"+str(s))
+
+    def switches_count(self):
+        return len(self.topo_raw_switches)
 
     def convert_raw_links_to_list(self):
         # Build a  list with all the links [((srcNode,port), (dstNode, port))].
@@ -273,3 +277,59 @@ class TopoStructure():
             if ((sdpid, sport), (ddpid, dport)) == ((link.src.dpid, link.src.port_no), (link.dst.dpid, link.dst.port_no)):
                 return True
         return False
+
+    """
+    Finds the shortest path from source s to destination d.
+    Both s and d are switches.
+    """
+    def find_shortest_path(self, s):
+        s_count = self.switches_count()
+        s_temp = s
+        visited = []
+        shortest_path = [0 for s_dpid in range(1, s_count)]
+
+        while s_count != len(visited):
+            visited.append(s_temp)
+            for l in self.find_links_with_src(s_temp):
+                if l.dst.dpid not in visited:
+                    shortest_path[l.dst.dpid] += 1
+
+            s_temp = shortest_path.index(min(shortest_path))
+        return shortest_path
+
+    """
+    Finds the dpids of destinations where the links' source is s_dpid
+    """
+    def find_dst_with_src(self, s_dpid):
+        d = []
+        for l in self.topo_raw_links:
+            if l.src.dpid == s_dpid:
+                d.append(l.dst.dpid)
+        return d
+
+    """
+    Finds the list of link objects where links' src dpid is s_dpid
+    """
+    def find_links_with_src(self, s_dpid):
+        d_links = []
+        for l in self.topo_raw_links:
+            if l.src.dpid == s_dpid:
+                d_links.append(l)
+        return d_links
+
+    """
+    Returns a link object that has in_dpid and in_port as either source or destination dpid and port.
+    """
+    def link_with_src_dst_port(self, in_port, in_dpid):
+        for l in self.topo_raw_links:
+            if (l.src.dpid == in_dpid and l.src.port_no == in_port) or (l.dst.dpid == in_dpid and l.src.port_no == in_port):
+                return l
+        return None
+    """
+    Returns a link object that has in_dpid and in_port as either source dpid and port.
+    """
+    def link_with_src_port(self, in_port, in_dpid):
+        for l in self.topo_raw_links:
+            if (l.src.dpid == in_dpid and l.src.port_no == in_port) or (l.dst.dpid == in_dpid and l.src.port_no == in_port):
+                return l
+        return None
