@@ -24,7 +24,6 @@ from ryu.lib.packet import ethernet
 from ryu.topology import event
 from ryu.topology.api import get_all_switch, get_all_link
 from ryu.lib import dpid as dpid_lib
-from threading import Lock
 from ryu.controller import dpset
 import networkx as nx
 UP = 1
@@ -107,7 +106,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
 
-        self.logger.info("\tpacket in %s %s %s %s", dpid, src, dst, in_port)
+        #self.logger.info("\tpacket in %s %s %s %s", dpid, src, dst, in_port)
 
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
@@ -158,10 +157,7 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         # Call get_link() to get the list of objects Link.
         self.topo_shape.topo_raw_links = get_all_link(self)
-        #self.topo_shape.net.add_nodes_from(self.topo_shape.topo_raw_switches)
-        #self.topo_shape.net.add_edges_from(self.topo_shape.topo_raw_links)
-        #self.logger.info("Nods: ")
-        #print (self.topo_shape.net.nodes())
+
         self.topo_shape.print_links("get_topology_data")
         self.topo_shape.print_switches("get_topology_data")
 
@@ -186,7 +182,9 @@ class SimpleSwitch13(app_manager.RyuApp):
                           port_attr.max_speed))
         if port_attr.state == 1:
             self.topo_shape.print_links("Link Down")
-            print(self.topo_shape.find_shortest_path(self.topo_shape.link_with_src_port(port_attr.port_no, dp)))
+            out = self.topo_shape.link_with_src_port(port_attr.port_no, dp.id)
+            print out
+            print(self.topo_shape.find_shortest_path(out.src.dpid))
         elif port_attr.state == 0:
             self.topo_shape.print_links("Link Up")
 
@@ -292,6 +290,7 @@ class TopoStructure():
             visited.append(s_temp)
             for l in self.find_links_with_src(s_temp):
                 if l.dst.dpid not in visited:
+                    print (l.dst.dpid)
                     shortest_path[l.dst.dpid] += 1
 
             s_temp = shortest_path.index(min(shortest_path))
