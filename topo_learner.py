@@ -261,26 +261,33 @@ class TopoStructure():
         visited = []
         shortest_path = {}
 
-        while s_count != len(visited):
-            print  visited
+        while s_count > len(visited):
+            print "visited in: " + str(visited)
             visited.append(s_temp)
-            print visited
-            print ("s_temp 1: " + str(s_temp))
+
+            print ("s_temp in: " + str(s_temp))
             for l in self.find_links_with_src(s_temp):
                 print "\t"+str(l)
                 if l.dst.dpid not in visited:
                     print ("\t\tDPID dst: "+ str(l.dst.dpid))
-                    if l.src.dpid in shortest_path:
+                    if l.dst.dpid in shortest_path:
                         shortest_path[l.dst.dpid] = shortest_path[l.dst.dpid] + 1
                         print("\t\t\tdpid found. Count: "+str(shortest_path[l.dst.dpid]))
                     else:
                         print("\t\t\tdpid not found.")
-                        shortest_path[l.dst.dpid] = 0
-            print ("shortest_path: "+str(shortest_path))
+                        shortest_path[l.dst.dpid] = 1
+            print ("shortest_path: " + str(shortest_path))
             min_val = min(shortest_path.itervalues())
-            t = [k for k,v in shortest_path.iteritems() if v == min_val]
-            s_temp = t[0]
-            print  "s_temp 2: " + str(s_temp)+"\n"
+            t_dpid = [k for k,v in shortest_path.iteritems() if v == min_val]
+            print ("t_dpid: "+str(t_dpid))
+            for dpid_index in t_dpid:
+                if dpid_index not in visited:
+                    s_temp = dpid_index
+                    break
+                else:
+                    print(str(dpid_index)+" DPID not in visisted")
+            print  "s_temp out: " + str(s_temp)
+            print "visited out: " + str(visited)+"\n"
         return shortest_path
 
     """
