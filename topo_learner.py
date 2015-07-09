@@ -307,7 +307,6 @@ class TopoStructure():
             print "visited out: " + str(visited)+"\n"
         return shortest_path
 
-
     """
     Finds the shortest path from source s to destination d.
     Both s and d are switches.
@@ -317,35 +316,37 @@ class TopoStructure():
         s_temp = s
         visited = []
         Fereng = []
+        Fereng.append(s_temp)
         shortest_path = {}
         shortest_path[s_temp]=0
         while s_count > len(visited):
             print "visited in: " + str(visited)
             visited.append(s_temp)
-
+            print ("Fereng in: "+str(Fereng))
             print ("s_temp in: " + str(s_temp))
             for l in self.find_links_with_src(s_temp):
                 print "\t"+str(l)
-                Fereng.append(l.dst.dpid)
+                if l.dst.dpid not in visited:
+                    Fereng.append(l.dst.dpid)
                 print ("\tAdded {0} to Fereng: ".format(l.dst.dpid))
                 if l.dst.dpid in shortest_path:
-                    #Find the minimum o
+                    # Find the minimum o
                     shortest_path[l.dst.dpid] = min(shortest_path[l.src.dpid] + 1, shortest_path[l.dst.dpid])
                     print("\t\tdst dpid found in shortest_path. Count: "+str(shortest_path[l.dst.dpid]))
                 elif l.src.dpid in shortest_path and l.dst.dpid not in shortest_path:
                     print("\t\tdst dpid not found bit src dpid found.")
                     shortest_path[l.dst.dpid] = shortest_path[l.src.dpid] + 1
             print ("shortest_path: " + str(shortest_path))
+            if s_temp in Fereng:
+                Fereng.remove(s_temp)
             min_val = min(Fereng)
-            print ("Fereng: "+str(Fereng))
+            print ("Fereng out: "+str(Fereng))
             t_dpid = [k for k in Fereng if k not in visited]
             print ("Next possible dpids (t_dpid): "+str(t_dpid))
-            for dpid_index in t_dpid:
-                if dpid_index not in visited:
-                    s_temp = dpid_index
-                    break
-                else:
-                    print(str(dpid_index)+" DPID not in visited")
+
+            if len(t_dpid)!=0:
+                s_temp = t_dpid[t_dpid.index(min(t_dpid))]
+
             print "s_temp out: " + str(s_temp)
             print "visited out: " + str(visited) + "\n"
         return shortest_path
