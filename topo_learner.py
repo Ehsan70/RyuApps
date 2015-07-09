@@ -188,9 +188,10 @@ class SimpleSwitch13(app_manager.RyuApp):
                           port_attr.max_speed))
         if port_attr.state == 1:
             tmp_list = []
+            removed_link = self.topo_shape.link_with_src_port(port_attr.port_no, dp.id)
             for i, link in enumerate(self.topo_shape.topo_raw_links):
 
-                print "i"+str(i)
+                print "i: "+str(i)
                 if link.src.dpid == dp.id and link.src.port_no == port_attr.port_no:
                     print "Removing link"+str(link)+" with index "+str(i)
                     #del self.topo_shape.topo_raw_links[i]
@@ -199,16 +200,14 @@ class SimpleSwitch13(app_manager.RyuApp):
                     #del self.topo_shape.topo_raw_links[i]
                 else:
                     tmp_list.append(link)
-            for ll in tmp_list:
-                print str(ll)
 
-            self.topo_shape.topo_raw_switches = copy.copy(tmp_list)
+            self.topo_shape.topo_raw_links = copy.copy(tmp_list)
 
             self.topo_shape.print_links("Link Down")
-            out = self.topo_shape.link_with_src_port(port_attr.port_no, dp.id)
-            print "out"+str(out)
-            if out is not None:
-                print(self.topo_shape.find_shortest_path(out.src.dpid))
+
+            print "Removed Link"+str(removed_link)
+            if removed_link is not None:
+                print(self.topo_shape.find_shortest_path2(removed_link.src.dpid))
         elif port_attr.state == 0:
             self.topo_shape.print_links("Link Up")
         self.topo_shape.lock.release()
@@ -275,8 +274,9 @@ class TopoStructure():
         s_count = self.switches_count()
         s_temp = s
         visited = []
+        Fereng = []
         shortest_path = {}
-
+        shortest_path[s_temp]=0
         while s_count > len(visited):
             print "visited in: " + str(visited)
             visited.append(s_temp)
@@ -287,14 +287,15 @@ class TopoStructure():
                 if l.dst.dpid not in visited:
                     print ("\t\tDPID dst: "+ str(l.dst.dpid))
                     if l.dst.dpid in shortest_path:
-                        shortest_path[l.dst.dpid] = shortest_path[l.dst.dpid] + 1
-                        print("\t\t\tdpid found. Count: "+str(shortest_path[l.dst.dpid]))
+                        #Find the minimum o
+                        shortest_path[l.dst.dpid] = min(shortest_path[l.src.dpid] + 1, shortest_path[l.src.dpid])
+                        print("\t\t\tdpid found in shortest_path. Count: "+str(shortest_path[l.dst.dpid]))
                     else:
                         print("\t\t\tdpid not found.")
-                        shortest_path[l.dst.dpid] = 1
+                        shortest_path[l.dst.dpid] = shortest_path[l.src.dpid] + 1
             print ("shortest_path: " + str(shortest_path))
             min_val = min(shortest_path.itervalues())
-            t_dpid = [k for k,v in shortest_path.iteritems() if v == min_val]
+            t_dpid = [k for k,v in shortest_path.iteritems() if v == min_val and v not in visited]
             print ("t_dpid: "+str(t_dpid))
             for dpid_index in t_dpid:
                 if dpid_index not in visited:
@@ -304,6 +305,49 @@ class TopoStructure():
                     print(str(dpid_index)+" DPID not in visisted")
             print  "s_temp out: " + str(s_temp)
             print "visited out: " + str(visited)+"\n"
+        return shortest_path
+
+
+    """
+    Finds the shortest path from source s to destination d.
+    Both s and d are switches.
+    """
+    def find_shortest_path2(self, s):
+        s_count = self.switches_count()
+        s_temp = s
+        visited = []
+        Fereng = []
+        shortest_path = {}
+        shortest_path[s_temp]=0
+        while s_count > len(visited):
+            print "visited in: " + str(visited)
+            visited.append(s_temp)
+
+            print ("s_temp in: " + str(s_temp))
+            for l in self.find_links_with_src(s_temp):
+                print "\t"+str(l)
+                Fereng.append(l.dst.dpid)
+                print ("\tAdded {0} to Fereng: ".format(l.dst.dpid))
+                if l.dst.dpid in shortest_path:
+                    #Find the minimum o
+                    shortest_path[l.dst.dpid] = min(shortest_path[l.src.dpid] + 1, shortest_path[l.dst.dpid])
+                    print("\t\tdst dpid found in shortest_path. Count: "+str(shortest_path[l.dst.dpid]))
+                elif l.src.dpid in shortest_path and l.dst.dpid not in shortest_path:
+                    print("\t\tdst dpid not found bit src dpid found.")
+                    shortest_path[l.dst.dpid] = shortest_path[l.src.dpid] + 1
+            print ("shortest_path: " + str(shortest_path))
+            min_val = min(Fereng)
+            print ("Fereng: "+str(Fereng))
+            t_dpid = [k for k in Fereng if k not in visited]
+            print ("Next possible dpids (t_dpid): "+str(t_dpid))
+            for dpid_index in t_dpid:
+                if dpid_index not in visited:
+                    s_temp = dpid_index
+                    break
+                else:
+                    print(str(dpid_index)+" DPID not in visited")
+            print "s_temp out: " + str(s_temp)
+            print "visited out: " + str(visited) + "\n"
         return shortest_path
 
     """
