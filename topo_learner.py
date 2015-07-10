@@ -88,7 +88,6 @@ class SimpleSwitch13(app_manager.RyuApp):
     This is called when Ryu receives an OpenFlow packet_in message. The trick is set_ev_cls decorator. This decorator
     tells Ryu when the decorated function should be called.
     """
-
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         if ev.msg.msg_len < ev.msg.total_len:
@@ -143,7 +142,6 @@ class SimpleSwitch13(app_manager.RyuApp):
     """
     The event EventSwitchEnter will trigger the activation of get_topology_data().
     """
-
     @set_ev_cls(event.EventSwitchEnter)
     def handler_switch_enter(self, ev):
         self.topo_shape.topo_raw_switches = copy.copy(get_switch(self, None))
@@ -159,7 +157,6 @@ class SimpleSwitch13(app_manager.RyuApp):
     """
     This function determines the links and switches currently in the topology
     """
-
     def get_topology_data(self):
         # Call get_switch() to get the list of objects Switch.
         self.topo_shape.topo_raw_switches = copy.copy(get_all_switch(self))
@@ -195,13 +192,11 @@ class SimpleSwitch13(app_manager.RyuApp):
             tmp_list = []
             removed_link = self.topo_shape.link_with_src_port(port_attr.port_no, dp.id)
             for i, link in enumerate(self.topo_shape.topo_raw_links):
-
-                print "i: " + str(i)
                 if link.src.dpid == dp.id and link.src.port_no == port_attr.port_no:
-                    print "Removing link" + str(link) + " with index " + str(i)
+                    print "\t Removing link" + str(link) + " with index " + str(i)
                     # del self.topo_shape.topo_raw_links[i]
                 elif link.dst.dpid == dp.id and link.dst.port_no == port_attr.port_no:
-                    print "Removing link" + str(link) + " with index " + str(i)
+                    print "\t Removing link" + str(link) + " with index " + str(i)
                     # del self.topo_shape.topo_raw_links[i]
                 else:
                     tmp_list.append(link)
@@ -210,9 +205,10 @@ class SimpleSwitch13(app_manager.RyuApp):
 
             self.topo_shape.print_links("Link Down")
 
-            print "Removed Link" + str(removed_link)
+            print "\t Considering the removed Link" + str(removed_link)
             if removed_link is not None:
-                print(self.topo_shape.find_shortest_path2(removed_link.src.dpid))
+                shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(removed_link.src.dpid)
+                print("\t\tNew shortest_path_hubs: {0}\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
         elif port_attr.state == 0:
             self.topo_shape.print_links("Link Up")
         self.topo_shape.lock.release()
@@ -280,19 +276,22 @@ class TopoStructure():
     Finds the shortest path from source s to destination d.
     Both s and d are switches.
     """
-
-    def find_shortest_path2(self, s):
+    def find_shortest_path(self, s):
+        # I really recommend watching this video: https://www.youtube.com/watch?v=zXfDYaahsNA
         s_count = self.switches_count()
         s_temp = s
 
-        verbose = 1
+        # If you wanna see the prinfs set this to one.
+        verbose = 0
 
         visited = []
 
         Fereng = []
         Fereng.append(s_temp)
 
+        # Records number of hubs which you can reach the node from specified src
         shortest_path_hubs = {}
+        # The last node which you can access the node from. For example: {1,2} means you can reach node 1 from node 2.
         shortest_path_node = {}
         shortest_path_hubs[s_temp] = 0
         shortest_path_node[s_temp] = s_temp
