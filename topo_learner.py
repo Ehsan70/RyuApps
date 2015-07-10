@@ -27,6 +27,7 @@ from ryu.lib import dpid as dpid_lib
 from ryu.controller import dpset
 import copy
 from threading import Lock
+
 UP = 1
 DOWN = 0
 
@@ -87,6 +88,7 @@ class SimpleSwitch13(app_manager.RyuApp):
     This is called when Ryu receives an OpenFlow packet_in message. The trick is set_ev_cls decorator. This decorator
     tells Ryu when the decorated function should be called.
     """
+
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         if ev.msg.msg_len < ev.msg.total_len:
@@ -107,7 +109,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
 
-        #self.logger.info("\tpacket in %s %s %s %s", dpid, src, dst, in_port)
+        # self.logger.info("\tpacket in %s %s %s %s", dpid, src, dst, in_port)
 
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
@@ -136,18 +138,19 @@ class SimpleSwitch13(app_manager.RyuApp):
         out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                   in_port=in_port, actions=actions, data=data)
         datapath.send_msg(out)
+
     ###################################################################################
     """
     The event EventSwitchEnter will trigger the activation of get_topology_data().
     """
+
     @set_ev_cls(event.EventSwitchEnter)
     def handler_switch_enter(self, ev):
-        self.topo_shape.topo_raw_switches = copy.copy(get_switch(self,None))
-        self.topo_shape.topo_raw_links = copy.copy(get_link(self,None))
+        self.topo_shape.topo_raw_switches = copy.copy(get_switch(self, None))
+        self.topo_shape.topo_raw_links = copy.copy(get_link(self, None))
 
         self.topo_shape.print_links("EventSwitchEnter")
         self.topo_shape.print_switches("EventSwitchEnter")
-
 
     @set_ev_cls(event.EventSwitchLeave, [MAIN_DISPATCHER, CONFIG_DISPATCHER, DEAD_DISPATCHER])
     def handler_switch_leave(self, ev):
@@ -156,6 +159,7 @@ class SimpleSwitch13(app_manager.RyuApp):
     """
     This function determines the links and switches currently in the topology
     """
+
     def get_topology_data(self):
         # Call get_switch() to get the list of objects Switch.
         self.topo_shape.topo_raw_switches = copy.copy(get_all_switch(self))
@@ -171,6 +175,7 @@ class SimpleSwitch13(app_manager.RyuApp):
     EventOFPPortStatus: An event class for switch port status notification.
     The bellow handles the event.
     """
+
     @set_ev_cls(dpset.EventPortModify, MAIN_DISPATCHER)
     def port_modify_handler(self, ev):
         self.topo_shape.lock.acquire()
@@ -191,13 +196,13 @@ class SimpleSwitch13(app_manager.RyuApp):
             removed_link = self.topo_shape.link_with_src_port(port_attr.port_no, dp.id)
             for i, link in enumerate(self.topo_shape.topo_raw_links):
 
-                print "i: "+str(i)
+                print "i: " + str(i)
                 if link.src.dpid == dp.id and link.src.port_no == port_attr.port_no:
-                    print "Removing link"+str(link)+" with index "+str(i)
-                    #del self.topo_shape.topo_raw_links[i]
+                    print "Removing link" + str(link) + " with index " + str(i)
+                    # del self.topo_shape.topo_raw_links[i]
                 elif link.dst.dpid == dp.id and link.dst.port_no == port_attr.port_no:
-                    print "Removing link"+str(link)+" with index "+str(i)
-                    #del self.topo_shape.topo_raw_links[i]
+                    print "Removing link" + str(link) + " with index " + str(i)
+                    # del self.topo_shape.topo_raw_links[i]
                 else:
                     tmp_list.append(link)
 
@@ -205,20 +210,22 @@ class SimpleSwitch13(app_manager.RyuApp):
 
             self.topo_shape.print_links("Link Down")
 
-            print "Removed Link"+str(removed_link)
+            print "Removed Link" + str(removed_link)
             if removed_link is not None:
                 print(self.topo_shape.find_shortest_path2(removed_link.src.dpid))
         elif port_attr.state == 0:
             self.topo_shape.print_links("Link Up")
         self.topo_shape.lock.release()
 
+        ###################################################################################
+        ###################################################################################
 
-    ###################################################################################
-    ###################################################################################
 
 """
 This class holds the list of links and switches in the topology and it provides some useful functions
 """
+
+
 class TopoStructure():
     def __init__(self, *args, **kwargs):
         self.topo_raw_switches = []
@@ -228,14 +235,14 @@ class TopoStructure():
 
     def print_links(self, func_str=None):
         # Convert the raw link to list so that it is printed easily
-        print(" \t"+str(func_str)+": Current Links:")
+        print(" \t" + str(func_str) + ": Current Links:")
         for l in self.topo_raw_links:
-            print (" \t\t"+str(l))
+            print (" \t\t" + str(l))
 
     def print_switches(self, func_str=None):
-        print(" \t"+str(func_str)+": Current Switches:")
+        print(" \t" + str(func_str) + ": Current Switches:")
         for s in self.topo_raw_switches:
-            print (" \t\t"+str(s))
+            print (" \t\t" + str(s))
 
     def switches_count(self):
         return len(self.topo_raw_switches)
@@ -254,15 +261,18 @@ class TopoStructure():
     """
     Adds the link to list of raw links
     """
+
     def bring_up_link(self, link):
         self.topo_raw_links.append(link)
 
     """
     Check if a link with specific nodes exists.
     """
-    def check_link(self,sdpid, sport, ddpid, dport):
+
+    def check_link(self, sdpid, sport, ddpid, dport):
         for i, link in self.topo_raw_links:
-            if ((sdpid, sport), (ddpid, dport)) == ((link.src.dpid, link.src.port_no), (link.dst.dpid, link.dst.port_no)):
+            if ((sdpid, sport), (ddpid, dport)) == (
+                    (link.src.dpid, link.src.port_no), (link.dst.dpid, link.dst.port_no)):
                 return True
         return False
 
@@ -270,90 +280,67 @@ class TopoStructure():
     Finds the shortest path from source s to destination d.
     Both s and d are switches.
     """
-    def find_shortest_path(self, s):
-        s_count = self.switches_count()
-        s_temp = s
-        visited = []
-        Fereng = []
-        shortest_path = {}
-        shortest_path[s_temp]=0
-        while s_count > len(visited):
-            print "visited in: " + str(visited)
-            visited.append(s_temp)
 
-            print ("s_temp in: " + str(s_temp))
-            for l in self.find_links_with_src(s_temp):
-                print "\t"+str(l)
-                if l.dst.dpid not in visited:
-                    print ("\t\tDPID dst: "+ str(l.dst.dpid))
-                    if l.dst.dpid in shortest_path:
-                        #Find the minimum o
-                        shortest_path[l.dst.dpid] = min(shortest_path[l.src.dpid] + 1, shortest_path[l.src.dpid])
-                        print("\t\t\tdpid found in shortest_path. Count: "+str(shortest_path[l.dst.dpid]))
-                    else:
-                        print("\t\t\tdpid not found.")
-                        shortest_path[l.dst.dpid] = shortest_path[l.src.dpid] + 1
-            print ("shortest_path: " + str(shortest_path))
-            min_val = min(shortest_path.itervalues())
-            t_dpid = [k for k,v in shortest_path.iteritems() if v == min_val and v not in visited]
-            print ("t_dpid: "+str(t_dpid))
-            for dpid_index in t_dpid:
-                if dpid_index not in visited:
-                    s_temp = dpid_index
-                    break
-                else:
-                    print(str(dpid_index)+" DPID not in visisted")
-            print  "s_temp out: " + str(s_temp)
-            print "visited out: " + str(visited)+"\n"
-        return shortest_path
-
-    """
-    Finds the shortest path from source s to destination d.
-    Both s and d are switches.
-    """
     def find_shortest_path2(self, s):
         s_count = self.switches_count()
         s_temp = s
+
+        verbose = 1
+
         visited = []
+
         Fereng = []
         Fereng.append(s_temp)
-        shortest_path = {}
-        shortest_path[s_temp]=0
+
+        shortest_path_hubs = {}
+        shortest_path_node = {}
+        shortest_path_hubs[s_temp] = 0
+        shortest_path_node[s_temp] = s_temp
         while s_count > len(visited):
-            print "visited in: " + str(visited)
+            if verbose == 1: print "visited in: " + str(visited)
             visited.append(s_temp)
-            print ("Fereng in: "+str(Fereng))
-            print ("s_temp in: " + str(s_temp))
+            if verbose == 1: print ("Fereng in: " + str(Fereng))
+            if verbose == 1: print ("s_temp in: " + str(s_temp))
             for l in self.find_links_with_src(s_temp):
-                print "\t"+str(l)
+                if verbose == 1: print "\t" + str(l)
                 if l.dst.dpid not in visited:
                     Fereng.append(l.dst.dpid)
-                print ("\tAdded {0} to Fereng: ".format(l.dst.dpid))
-                if l.dst.dpid in shortest_path:
+                if verbose == 1: print ("\tAdded {0} to Fereng: ".format(l.dst.dpid))
+                if l.dst.dpid in shortest_path_hubs:
                     # Find the minimum o
-                    shortest_path[l.dst.dpid] = min(shortest_path[l.src.dpid] + 1, shortest_path[l.dst.dpid])
-                    print("\t\tdst dpid found in shortest_path. Count: "+str(shortest_path[l.dst.dpid]))
-                elif l.src.dpid in shortest_path and l.dst.dpid not in shortest_path:
-                    print("\t\tdst dpid not found bit src dpid found.")
-                    shortest_path[l.dst.dpid] = shortest_path[l.src.dpid] + 1
-            print ("shortest_path: " + str(shortest_path))
+                    if shortest_path_hubs[l.src.dpid] + 1 < shortest_path_hubs[l.dst.dpid]:
+                        shortest_path_hubs[l.dst.dpid] = shortest_path_hubs[l.src.dpid] + 1
+                        shortest_path_node[l.dst.dpid] = l.src.dpid
+                    else:
+                        shortest_path_hubs[l.dst.dpid] = shortest_path_hubs[l.dst.dpid]
+
+                    if verbose == 1: print(
+                        "\t\tdst dpid found in shortest_path. Count: " + str(shortest_path_hubs[l.dst.dpid]))
+                elif l.src.dpid in shortest_path_hubs and l.dst.dpid not in shortest_path_hubs:
+                    if verbose == 1: print("\t\tdst dpid not found bit src dpid found.")
+                    shortest_path_hubs[l.dst.dpid] = shortest_path_hubs[l.src.dpid] + 1
+                    shortest_path_node[l.dst.dpid] = l.src.dpid
+            if verbose == 1:
+                print ("shortest_path Hubs: " + str(shortest_path_hubs))
+                print ("shortest_path Node: " + str(shortest_path_node))
             if s_temp in Fereng:
                 Fereng.remove(s_temp)
-            min_val = min(Fereng)
-            print ("Fereng out: "+str(Fereng))
+            #min_val = min(Fereng)
+            if verbose == 1: print ("Fereng out: " + str(Fereng))
             t_dpid = [k for k in Fereng if k not in visited]
-            print ("Next possible dpids (t_dpid): "+str(t_dpid))
+            if verbose == 1: print ("Next possible dpids (t_dpid): " + str(t_dpid))
 
-            if len(t_dpid)!=0:
+            if len(t_dpid) != 0:
                 s_temp = t_dpid[t_dpid.index(min(t_dpid))]
 
-            print "s_temp out: " + str(s_temp)
-            print "visited out: " + str(visited) + "\n"
-        return shortest_path
+            if verbose == 1: print "s_temp out: " + str(s_temp)
+            if verbose == 1: print "visited out: " + str(visited) + "\n"
+        return shortest_path_hubs, shortest_path_node
 
     """
     Finds the dpids of destinations where the links' source is s_dpid
     """
+
     def find_dst_with_src(self, s_dpid):
         d = []
         for l in self.topo_raw_links:
@@ -364,6 +351,7 @@ class TopoStructure():
     """
     Finds the list of link objects where links' src dpid is s_dpid
     """
+
     def find_links_with_src(self, s_dpid):
         d_links = []
         for l in self.topo_raw_links:
@@ -374,14 +362,18 @@ class TopoStructure():
     """
     Returns a link object that has in_dpid and in_port as either source or destination dpid and port.
     """
+
     def link_with_src_dst_port(self, in_port, in_dpid):
         for l in self.topo_raw_links:
-            if (l.src.dpid == in_dpid and l.src.port_no == in_port) or (l.dst.dpid == in_dpid and l.src.port_no == in_port):
+            if (l.src.dpid == in_dpid and l.src.port_no == in_port) or (
+                            l.dst.dpid == in_dpid and l.src.port_no == in_port):
                 return l
         return None
+
     """
     Returns a link object that has in_dpid and in_port as either source dpid and port.
     """
+
     def link_with_src_port(self, in_port, in_dpid):
         for l in self.topo_raw_links:
             if (l.src.dpid == in_dpid and l.src.port_no == in_port) or (l.dst.dpid == in_dpid and l.src.port_no == in_port):
