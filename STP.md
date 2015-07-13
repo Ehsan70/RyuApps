@@ -71,10 +71,10 @@ Based on the cost of each port to reach the root bridge, decide the role of the 
 >  ---------------|------------------
 > Port priority	  |   Port number
 
-![Alt text](resources/fig23.jpg?raw=true  "Port roles in a topo")
+![Alt text](resources/fig23.png?raw=true  "Port roles in a topo")
 ###### 3. Port state change
 After the port role is decided (STP calculation is completed), each port becomes LISTEN state. After that, the state changes as shown below and according to the role of each port, it eventually becomes FORWARD state or BLOCK state. Ports set as disabled ports in the configuration become DISABLE state and after that the change of state does not take place.
-![Alt text](resources/fig33.jpg?raw=true  "Port states")
+![Alt text](resources/fig33.png?raw=true  "Port states")
 Each port decides operations such as frame transfer availability according to the state.
 
 
