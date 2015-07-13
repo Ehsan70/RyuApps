@@ -9,8 +9,10 @@ from mininet.cli import CLI
 from mininet.link import TCLink
 """
 Instructions to run the topo:
-    1. Go to directory where this fil is.
+    1. Go to directory where this filw is.
     2. run: sudo -E python spanning_tree.py
+
+This file is used in STP.md tutorial
 """
 
 
