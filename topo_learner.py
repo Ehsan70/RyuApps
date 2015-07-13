@@ -172,7 +172,6 @@ class SimpleSwitch13(app_manager.RyuApp):
     EventOFPPortStatus: An event class for switch port status notification.
     The bellow handles the event.
     """
-
     @set_ev_cls(dpset.EventPortModify, MAIN_DISPATCHER)
     def port_modify_handler(self, ev):
         self.topo_shape.lock.acquire()
@@ -220,8 +219,6 @@ class SimpleSwitch13(app_manager.RyuApp):
 """
 This class holds the list of links and switches in the topology and it provides some useful functions
 """
-
-
 class TopoStructure():
     def __init__(self, *args, **kwargs):
         self.topo_raw_switches = []
@@ -257,14 +254,12 @@ class TopoStructure():
     """
     Adds the link to list of raw links
     """
-
     def bring_up_link(self, link):
         self.topo_raw_links.append(link)
 
     """
     Check if a link with specific nodes exists.
     """
-
     def check_link(self, sdpid, sport, ddpid, dport):
         for i, link in self.topo_raw_links:
             if ((sdpid, sport), (ddpid, dport)) == (
@@ -273,7 +268,7 @@ class TopoStructure():
         return False
 
     """
-    Finds the shortest path from source s to destination d.
+    Finds the shortest path from source s to all other nodes.
     Both s and d are switches.
     """
     def find_shortest_path(self, s):
@@ -337,9 +332,27 @@ class TopoStructure():
         return shortest_path_hubs, shortest_path_node
 
     """
+    Find a path between src and dst based on the shorted path info which is stored on shortest_path_node
+    """
+    def find_path_from_topo(self,src_dpid, dst_dpid, shortest_path_node):
+        path = []
+        now_node = dst_dpid
+        last_node = None
+        while now_node != src_dpid:
+            last_node = shortest_path_node.pop(now_node, None)
+            if last_node != None:
+                l = self.link_from_src_to_dst(now_node, last_node)
+                if l is None:
+                    print("Link between {0} and {1} was not found in topo.".format(now_node, last_node))
+                else:
+                    path.append(l)
+                    now_node = last_node
+            else:
+                print "Path could not be found"
+        return path
+    """
     Finds the dpids of destinations where the links' source is s_dpid
     """
-
     def find_dst_with_src(self, s_dpid):
         d = []
         for l in self.topo_raw_links:
@@ -350,7 +363,6 @@ class TopoStructure():
     """
     Finds the list of link objects where links' src dpid is s_dpid
     """
-
     def find_links_with_src(self, s_dpid):
         d_links = []
         for l in self.topo_raw_links:
@@ -361,20 +373,29 @@ class TopoStructure():
     """
     Returns a link object that has in_dpid and in_port as either source or destination dpid and port.
     """
-
     def link_with_src_dst_port(self, in_port, in_dpid):
         for l in self.topo_raw_links:
             if (l.src.dpid == in_dpid and l.src.port_no == in_port) or (
                             l.dst.dpid == in_dpid and l.src.port_no == in_port):
                 return l
         return None
-
+    """
+    Returns a link object from src with dpid s to dest with dpid d.
+    """
+    def link_from_src_to_dst(self, s, d):
+        for l in self.topo_raw_links:
+            if l.src.dpid == s and l.dst.dpid == d:
+                return l
+        return None
     """
     Returns a link object that has in_dpid and in_port as either source dpid and port.
     """
-
     def link_with_src_port(self, in_port, in_dpid):
         for l in self.topo_raw_links:
             if (l.src.dpid == in_dpid and l.src.port_no == in_port) or (l.dst.dpid == in_dpid and l.src.port_no == in_port):
                 return l
         return None
+
+    ########## Functions related to Spanning Tree Algorithm ##########
+    def find_root_switch(self):
+        pass
