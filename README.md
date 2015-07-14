@@ -34,3 +34,7 @@ This file contains a topo with 3 switches connects in loop. It is used in `STM.m
 
 ### simple_switch_stp_13.py
 This file was downloaded from this [link](https://github.com/osrg/ryu-book/blob/master/en/source/sources/simple_switch_stp_13.py). There are explanations in the following [link](http://osrg.github.io/ryu-book/en/html/spanning_tree.html#executing-the-ryu-application). The code contains comment which describe the code. The code illustartes the usage of Ryu STP library in applicaitons. I used this code and integrated it into Controller.py which made up the ControllerSTP.py 
+
+### resources dir
+
+This directory copntains images which are used in the tutorials. 
