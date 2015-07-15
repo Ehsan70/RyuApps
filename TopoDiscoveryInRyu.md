@@ -8,6 +8,7 @@ A basic knowlege of Ryu, OpenFlow and linux CLI is required.
 <b>Environment: </b> I have used the VM from sdn hub, I recommond you do the same. Link for installation is provided below: http://sdnhub.org/tutorials/sdn-tutorial-vm/
 
 # Controller with Topo Learning Feature
+Your controller should be able to remeber the topo. 
 In order to get a topology of your network you need to use two funtions in the [`api.py`](https://github.com/osrg/ryu/blob/master/ryu/topology/api.py).
 The two functions have the following signature: 
 1. get_switch(app, dpid=None)
@@ -374,4 +375,64 @@ As soon as you run the mininet topo you should receive some messages on the Ryu.
 
 # Possible additions to the code: 
 Note that the topology is learned only when switches join. What if a link goes down ? To keep track to topo in case of link failures 
-you need to keep to track of the links that went down. 
+you need to keep to track of the links that went down. Have a look at [`Controller.py`](https://github.com/Ehsan70/RyuApps/blob/master/Controller.py). The `Controller.py` contains funcitons that would keep track of failures. It also has a specific data structure for topology which keeps a record of links and switches while contains some useful function.  
+
+
+# Details of get_switch() and get_link()
+The two functions are defined in the [api.py](https://github.com/osrg/ryu/blob/master/ryu/topology/api.py). Their implementation is :
+
+```python 
+def get_switch(app, dpid=None):
+    rep = app.send_request(event.EventSwitchRequest(dpid))
+    return rep.switches
+
+def get_link(app, dpid=None):
+    rep = app.send_request(event.EventLinkRequest(dpid))
+    return rep.links
+```
+
+As you can see, `get_switch()` method calls `EventSwitchRequest` event. The `EventSwitchRequest` and `EventLinkRequest` are defined in [event.py](https://github.com/osrg/ryu/blob/master/ryu/topology/event.py).
+After that, `switch_requrest_handler()` in [`switches.py`](https://github.com/osrg/ryu/blob/master/ryu/topology/switches.py) is called and sends the response to the caller. In other words, the caller thread sends
+`EventSwitchRequest` then Ryu finds a thread that interested in `EventSwitchRequest` and delivers it to the thread. The thread sends `EventSwitchReply` to the caller.
+So to make it short, the actually learning of the topology is done in [`switches.py`](https://github.com/osrg/ryu/blob/master/ryu/topology/switches.py). For example links arelearned in the following [ packet_in_handler(self, ev)](https://github.com/osrg/ryu/blob/master/ryu/topology/switches.py#L682) of `switches.py`. When a packet commes to the switches, the switch does not know what to do with it. So, it sends and `PacketIn` message to controller which also contains the original message that was received by switch. When PacketIn message is received the event `ofp_event.EventOFPPacketIn` is fired. When the event is fired, the handler of that event is called . In this case, it is `packet_in_handler()`. In the `packet_in_handler`, the message is unmarshaled and some info is extracted. Since the message has the source and destination the controller can use that to figure out the links in the topology. 
+
+Have a look at this section of the code: 
+
+```python 
+        msg = ev.msg
+        try:
+            src_dpid, src_port_no = LLDPPacket.lldp_parse(msg.data)
+        except LLDPPacket.LLDPUnknownFormat as e:
+            return
+
+        dst_dpid = msg.datapath.id
+        
+        # ...
+        
+        src = self._get_port(src_dpid, src_port_no)
+        if not src or src.dpid == dst_dpid:
+            return
+        try:
+            self.ports.lldp_received(src)
+        except KeyError:
+            pass
+
+        dst = self._get_port(dst_dpid, dst_port_no)
+        if not dst:
+            return
+
+        # ... 
+
+        link = Link(src, dst)
+        if link not in self.links:
+            self.send_event_to_observers(event.EventLinkAdd(link))
+
+        # ... rest of the code 
+```
+As you can see, the `msg` is extracted from the packet. Then `src_dpid`, `src_port_no and` and `dst_dpid` are extracted from the message. Under some conditions if a Link is added, a Link object is created using `link = Link(src, dst)` and the event `EventLinkAdd` is fire. Find `EventLinkDelete` event in the code and study it.
+
+
+# Sources: 
+[Forum](http://sourceforge.net/p/ryu/mailman/message/32587410/) 
+
+[Topology Discovery with Ryu](http://sdn-lab.com/2014/12/31/topology-discovery-with-ryu/)
