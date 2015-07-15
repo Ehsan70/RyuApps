@@ -11,8 +11,8 @@ A basic knowlege of Ryu, OpenFlow and linux CLI is required.
 Your controller should be able to remeber the topo. 
 In order to get a topology of your network you need to use two funtions in the [`api.py`](https://github.com/osrg/ryu/blob/master/ryu/topology/api.py).
 The two functions have the following signature: 
-1. get_switch(app, dpid=None)
-2. get_link(app, dpid=None)
+ 1. get_switch(app, dpid=None) 
+ 2. get_link(app, dpid=None)
 
 By calling them you would get the topology that is currently known to he controller. I would put the two in funtions where a 
 switch might enter or leave the topo. Have a look at this section of the code: 
@@ -394,7 +394,28 @@ def get_link(app, dpid=None):
 As you can see, `get_switch()` method calls `EventSwitchRequest` event. The `EventSwitchRequest` and `EventLinkRequest` are defined in [event.py](https://github.com/osrg/ryu/blob/master/ryu/topology/event.py).
 After that, `switch_requrest_handler()` in [`switches.py`](https://github.com/osrg/ryu/blob/master/ryu/topology/switches.py) is called and sends the response to the caller. In other words, the caller thread sends
 `EventSwitchRequest` then Ryu finds a thread that interested in `EventSwitchRequest` and delivers it to the thread. The thread sends `EventSwitchReply` to the caller.
-So to make it short, the actually learning of the topology is done in [`switches.py`](https://github.com/osrg/ryu/blob/master/ryu/topology/switches.py). For example links arelearned in the following [ packet_in_handler(self, ev)](https://github.com/osrg/ryu/blob/master/ryu/topology/switches.py#L682) of `switches.py`. When a packet commes to the switches, the switch does not know what to do with it. So, it sends and `PacketIn` message to controller which also contains the original message that was received by switch. When PacketIn message is received the event `ofp_event.EventOFPPacketIn` is fired. When the event is fired, the handler of that event is called . In this case, it is `packet_in_handler()`. In the `packet_in_handler`, the message is unmarshaled and some info is extracted. Since the message has the source and destination the controller can use that to figure out the links in the topology. 
+So to make it short, the actually learning of the topology is done in [`switches.py`](https://github.com/osrg/ryu/blob/master/ryu/topology/switches.py). 
+
+Here is implementation of `switch_request_handler`:
+```python
+    @set_ev_cls(event.EventSwitchRequest)
+    def switch_request_handler(self, req):
+        # LOG.debug(req)
+        dpid = req.dpid
+        switches = []
+        if dpid is None:
+            # reply all list
+            for dp in self.dps.values():
+                switches.append(self._get_switch(dp.id))
+        elif dpid in self.dps:
+            switches.append(self._get_switch(dpid))
+
+        rep = event.EventSwitchReply(req.src, switches)
+        self.reply_to_request(req, rep)
+```
+The above function uses `self.dps` to get the current switches. The `dps` is modified in two functions [`_unregister`](https://github.com/osrg/ryu/blob/master/ryu/topology/switches.py#L481) and [`_register`](https://github.com/osrg/ryu/blob/master/ryu/topology/switches.py#L472) which both are methods of [`Switches`](https://github.com/osrg/ryu/blob/master/ryu/topology/switches.py#L429) class. The `_unregister` and `_register` functions are called in [`def state_change_handler(self, ev)`](https://github.com/osrg/ryu/blob/master/ryu/topology/switches.py#L523). `state_change_handler(self, ev)` is a handler for `EventOFPStateChange` event. This event is for negotiation phase change notification of switch. An instance of this class is sent to observer after changing the negotiation phase([Ryu Documentation for EventOFPStateChange ](http://ryu.readthedocs.org/en/latest/ryu_app_api.html)). 
+
+Links are learned in the [ packet_in_handler(self, ev)](https://github.com/osrg/ryu/blob/master/ryu/topology/switches.py#L682) of `switches.py`. When a packet comes to a switche, the switch does not know what to do with it. So, it sends and `PacketIn` message to controller which also contains the original message that was received by switch. When PacketIn message is received, the event `ofp_event.EventOFPPacketIn` is fired. When the event is fired, the handler of that event is called . In this case, it is `packet_in_handler()`. In the `packet_in_handler`, the message is unmarshaled and some info is extracted. Since the message has the source and destination for the both switches, the controller can use that to figure out the links in the topology.
 
 Have a look at this section of the code: 
 
@@ -429,7 +450,7 @@ Have a look at this section of the code:
 
         # ... rest of the code 
 ```
-As you can see, the `msg` is extracted from the packet. Then `src_dpid`, `src_port_no and` and `dst_dpid` are extracted from the message. Under some conditions if a Link is added, a Link object is created using `link = Link(src, dst)` and the event `EventLinkAdd` is fire. Find `EventLinkDelete` event in the code and study it.
+As you can see, the `src_dpid`, `src_port_no and` and `dst_dpid` are extracted from the message `msg`. Under some conditions if a Link is added, a Link object is created using `link = Link(src, dst)` and then the event `EventLinkAdd` is fired. Find `EventLinkDelete` event in the code and study it.
 
 
 # Sources: 
