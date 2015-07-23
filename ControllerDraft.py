@@ -212,10 +212,21 @@ class SimpleSwitch13(app_manager.RyuApp):
             print "\t Second removed link: " + str(second_removed_link)
 
             if first_removed_link is not None and second_removed_link is not None:
+                # Find shortest path for source with dpid first_removed_link.src.dpid
                 shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(first_removed_link.src.dpid)
                 print "\t Shortest Path:"
-                print("\t\tNew shortest_path_hubs: {0}\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
-                result = self.topo_shape.convert_dpid_path_to_links(self.topo_shape.find_backup_path(link=first_removed_link, shortest_path_node=shortest_path_node))
+                print("\t\tNew shortest_path_hubs: {0}"
+                      "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
+
+                """
+                find_backup_path(): Finds the bakcup path (which contains dpids) for the removed link which is
+                    called first_removed_link based on shortest_path_node that is given to find_backup_path()
+                convert_dpid_path_to_links(): The functions turns the given list of dpid to list of Link objects.
+                revert_link_list(): This reverts the links in the list of objects. This is because all the links in the
+                    topo are double directed edge.
+                """
+                result = self.topo_shape.convert_dpid_path_to_links(self.topo_shape.find_backup_path(
+                    link=first_removed_link, shortest_path_node=shortest_path_node))
                 self.topo_shape.print_input_links(list_links=result)
                 self.topo_shape.print_input_links(list_links=self.topo_shape.revert_link_list(link_list=result))
 
