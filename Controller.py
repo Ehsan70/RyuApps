@@ -204,10 +204,10 @@ class SimpleSwitch13(app_manager.RyuApp):
             removed_link = self.topo_shape.link_with_src_port(port_attr.port_no, dp.id)
             for i, link in enumerate(self.topo_shape.topo_raw_links):
                 if link.src.dpid == dp.id and link.src.port_no == port_attr.port_no:
-                    print "\t Removing link" + str(link) + " with index " + str(i)
+                    print "\t Removing link " + str(link) + " with index " + str(i)
                     # del self.topo_shape.topo_raw_links[i]
                 elif link.dst.dpid == dp.id and link.dst.port_no == port_attr.port_no:
-                    print "\t Removing link" + str(link) + " with index " + str(i)
+                    print "\t Removing link " + str(link) + " with index " + str(i)
                     # del self.topo_shape.topo_raw_links[i]
                 else:
                     tmp_list.append(link)
@@ -216,7 +216,7 @@ class SimpleSwitch13(app_manager.RyuApp):
 
             self.topo_shape.print_links("Link Down")
 
-            print "\t Considering the removed Link" + str(removed_link)
+            print "\t Considering the removed Link " + str(removed_link)
             if removed_link is not None:
                 shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(removed_link.src.dpid)
                 print("\t\tNew shortest_path_hubs: {0}\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
