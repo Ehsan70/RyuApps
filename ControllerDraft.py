@@ -17,7 +17,7 @@ from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, DEAD_DISPATCHER
 from ryu.controller.handler import set_ev_cls
-from ryu.ofproto import ofproto_v1_3
+from ryu.ofproto import ofproto_v1_3, ofproto_v1_3_parser
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 
@@ -91,7 +91,7 @@ class SimpleSwitch13(app_manager.RyuApp):
     This is called when Ryu receives an OpenFlow packet_in message. The trick is set_ev_cls decorator. This decorator
     tells Ryu when the decorated function should be called.
     """
-    @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
+    #@set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         if ev.msg.msg_len < ev.msg.total_len:
             self.logger.debug("packet truncated: only %s of %s bytes",
@@ -230,6 +230,36 @@ class SimpleSwitch13(app_manager.RyuApp):
                 self.topo_shape.print_input_links(list_links=result)
                 self.topo_shape.print_input_links(list_links=self.topo_shape.revert_link_list(link_list=result))
 
+
+                match = ofproto_v1_3_parser.OFPMatch(in_port=1)
+                actions = [ofproto_v1_3_parser.OFPActionOutput(port=2)]
+                inst = [ofproto_v1_3_parser.OFPInstructionActions(ofproto_v1_3_parser.OFPIT_APPLY_ACTIONS, actions)]
+                mod = ofproto_v1_3_parser.OFPFlowMod(datapath=1, priority=1, match=match, instructions=inst)
+                datapath.send_msg(mod)
+                match = ofproto_v1_3_parser.OFPMatch(in_port=2)
+                actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
+                inst = [ofproto_v1_3_parser.OFPInstructionActions(ofproto_v1_3_parser.OFPIT_APPLY_ACTIONS, actions)]
+
+                self.add_flow(1, 1, match, actions)
+
+                match = ofproto_v1_3_parser.OFPMatch(in_port=3)
+                actions = [ofproto_v1_3_parser.OFPActionOutput(port=2)]
+                inst = [ofproto_v1_3_parser.OFPInstructionActions(ofproto_v1_3_parser.OFPIT_APPLY_ACTIONS, actions)]
+                self.add_flow(2, 1, match, actions)
+                match = ofproto_v1_3_parser.OFPMatch(in_port=2)
+                actions = [ofproto_v1_3_parser.OFPActionOutput(port=3)]
+                inst = [ofproto_v1_3_parser.OFPInstructionActions(ofproto_v1_3_parser.OFPIT_APPLY_ACTIONS, actions)]
+                self.add_flow(2, 1, match, actions)
+
+                match = ofproto_v1_3_parser.OFPMatch(in_port=1)
+                actions = [ofproto_v1_3_parser.OFPActionOutput(port=3)]
+                inst = [ofproto_v1_3_parser.OFPInstructionActions(ofproto_v1_3_parser.OFPIT_APPLY_ACTIONS, actions)]
+                self.add_flow(3, 1, match, actions)
+                match = ofproto_v1_3_parser.OFPMatch(in_port=3)
+                actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
+                inst = [ofproto_v1_3_parser.OFPInstructionActions(ofproto_v1_3_parser.OFPIT_APPLY_ACTIONS, actions)]
+                self.add_flow(3, 1, match, actions)
+
         elif port_attr.state == 0:
             self.topo_shape.print_links(" Link Up")
         self.topo_shape.lock.release()
@@ -250,6 +280,7 @@ class TopoStructure():
 
         # This structure
         self.link_backup = {}
+
 
     """
     Based on shortest_path_node, the functions finds a backup path for the link object Link.
@@ -279,6 +310,7 @@ class TopoStructure():
                 if l.dst.dpid == ll.src.dpid and l.src.dpid == ll.dst.dpid:
                     reverted_list.append(ll)
         return reverted_list
+
     """
     This converts the list of dpids returned from find_backup_path() to a list of link objects.
     """
@@ -310,6 +342,15 @@ class TopoStructure():
         print(" \t" + str(func_str) + ": Current Switches:")
         for s in self.topo_raw_switches:
             print (" \t\t" + str(s))
+
+    """
+    Returns a datapath with id set to dpid
+    """
+    def get_dp_switch_with_id(self,dpid):
+        for s in self.topo_raw_switches:
+            if s.dp.id == dpid:
+                return s.dp
+        return None
 
     def switches_count(self):
         return len(self.topo_raw_switches)
