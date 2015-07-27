@@ -19,7 +19,11 @@ from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, DEAD_DISP
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3, ofproto_v1_3_parser
 from ryu.lib.packet import packet
-from ryu.lib.packet import ethernet
+
+from ryu.lib.packet.ethernet import ethernet
+from ryu.lib.packet.icmp import icmp
+from ryu.lib.packet.ipv6 import ipv6
+from ryu.lib.packet.arp import arp
 
 from ryu.topology import event
 from ryu.topology.api import get_all_switch, get_all_link, get_switch, get_link
@@ -91,55 +95,56 @@ class SimpleSwitch13(app_manager.RyuApp):
     This is called when Ryu receives an OpenFlow packet_in message. The trick is set_ev_cls decorator. This decorator
     tells Ryu when the decorated function should be called.
     """
-    #@set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
+    @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
-        if ev.msg.msg_len < ev.msg.total_len:
-            self.logger.debug("packet truncated: only %s of %s bytes",
-                              ev.msg.msg_len, ev.msg.total_len)
         msg = ev.msg
+        print "#############################################"
         datapath = msg.datapath
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
-        in_port = msg.match['in_port']
+        print "datapath id: "+str(datapath.id)
+        port = msg.match['in_port']
+        print "port: "+str(port)
+        pkt = packet.Packet(data=msg.data)
+        self.logger.info("packet-in: %s" % (pkt,))
 
-        pkt = packet.Packet(msg.data)
-        eth = pkt.get_protocols(ethernet.ethernet)[0]
+        pkt_ethernet_list = pkt.get_protocols(ethernet)
+        if pkt_ethernet_list:
+            pkt_ethernet = pkt_ethernet_list[0]
+            print ("pkt_ethernet: " + str(pkt_ethernet))
+            print ("pkt_ethernet:dst: " + str(pkt_ethernet.dst))
+            print ("pkt_ethernet:src: " + str(pkt_ethernet.src))
+            print ("pkt_ethernet:ethertype: " + str(pkt_ethernet.ethertype))
 
-        dst = eth.dst
-        src = eth.src
+        print "-----------------------------------------------"
 
-        dpid = datapath.id
-        self.mac_to_port.setdefault(dpid, {})
+        pkt_ipv6_list = pkt.get_protocols(ipv6)
+        if pkt_ipv6_list:
+            pkt_ipv6 = pkt_ipv6_list[0]
+            print ("pkt_ipv6: " + str(pkt_ipv6))
+            print ("pkt_ipv6:dst: " + str(pkt_ipv6.dst))
+            print ("pkt_ipv6:src: " + str(pkt_ipv6.src))
+            print ("pkt_ipv6:nxt: " + str(pkt_ipv6.nxt))
+            print ("pkt_ipv6:hop_limit: " + str(pkt_ipv6.hop_limit))
+            print ("pkt_ipv6:ext_hdrs: " + str(pkt_ipv6.ext_hdrs))
 
-        # self.logger.info("\tpacket in %s %s %s %s", dpid, src, dst, in_port)
+        print "-----------------------------------------------"
 
-        # learn a mac address to avoid FLOOD next time.
-        self.mac_to_port[dpid][src] = in_port
+        pkt_arp_list = pkt.get_protocols(arp)
+        if pkt_arp_list:
+            pkt_arp = pkt_arp_list[0]
+            print ("pkt_arp: " + str(pkt_arp))
+            print ("pkt_arp:dst_ip: " + str(pkt_arp.dst_ip))
+            print ("pkt_arp:src_ip: " + str(pkt_arp.src_ip))
+            print ("pkt_arp:dst_mac: " + str(pkt_arp.dst_mac))
+            print ("pkt_arp:src_mac: " + str(pkt_arp.src_mac))
 
-        if dst in self.mac_to_port[dpid]:
-            out_port = self.mac_to_port[dpid][dst]
-        else:
-            out_port = ofproto.OFPP_FLOOD
+        print "-----------------------------------------------"
 
-        actions = [parser.OFPActionOutput(out_port)]
-
-        # install a flow to avoid packet_in next time
-        if out_port != ofproto.OFPP_FLOOD:
-            match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
-            # verify if we have a valid buffer_id, if yes avoid to send both
-            # flow_mod & packet_out
-            if msg.buffer_id != ofproto.OFP_NO_BUFFER:
-                self.add_flow(datapath, 1, match, actions, msg.buffer_id)
+        pkt_icmp_list = pkt.get_protocols(icmp)
+        if pkt_icmp_list :
+            pkt_icmp = pkt_icmp_list[0]
+            if pkt_icmp:
+                print ("pkt_icmp: "+str(pkt_icmp))
                 return
-            else:
-                self.add_flow(datapath, 1, match, actions)
-        data = None
-        if msg.buffer_id == ofproto.OFP_NO_BUFFER:
-            data = msg.data
-
-        out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
-                                  in_port=in_port, actions=actions, data=data)
-        datapath.send_msg(out)
 
     ###################################################################################
     """
