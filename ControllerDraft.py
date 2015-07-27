@@ -228,37 +228,11 @@ class SimpleSwitch13(app_manager.RyuApp):
                 result = self.topo_shape.convert_dpid_path_to_links(self.topo_shape.find_backup_path(
                     link=first_removed_link, shortest_path_node=shortest_path_node))
                 self.topo_shape.print_input_links(list_links=result)
-                self.topo_shape.print_input_links(list_links=self.topo_shape.revert_link_list(link_list=result))
+                reverted_result = self.topo_shape.revert_link_list(link_list=result)
+                self.topo_shape.print_input_links(list_links=reverted_result)
 
-
-                match = ofproto_v1_3_parser.OFPMatch(in_port=1)
-                actions = [ofproto_v1_3_parser.OFPActionOutput(port=2)]
-                inst = [ofproto_v1_3_parser.OFPInstructionActions(ofproto_v1_3_parser.OFPIT_APPLY_ACTIONS, actions)]
-                mod = ofproto_v1_3_parser.OFPFlowMod(datapath=1, priority=1, match=match, instructions=inst)
-                datapath.send_msg(mod)
-                match = ofproto_v1_3_parser.OFPMatch(in_port=2)
-                actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
-                inst = [ofproto_v1_3_parser.OFPInstructionActions(ofproto_v1_3_parser.OFPIT_APPLY_ACTIONS, actions)]
-
-                self.add_flow(1, 1, match, actions)
-
-                match = ofproto_v1_3_parser.OFPMatch(in_port=3)
-                actions = [ofproto_v1_3_parser.OFPActionOutput(port=2)]
-                inst = [ofproto_v1_3_parser.OFPInstructionActions(ofproto_v1_3_parser.OFPIT_APPLY_ACTIONS, actions)]
-                self.add_flow(2, 1, match, actions)
-                match = ofproto_v1_3_parser.OFPMatch(in_port=2)
-                actions = [ofproto_v1_3_parser.OFPActionOutput(port=3)]
-                inst = [ofproto_v1_3_parser.OFPInstructionActions(ofproto_v1_3_parser.OFPIT_APPLY_ACTIONS, actions)]
-                self.add_flow(2, 1, match, actions)
-
-                match = ofproto_v1_3_parser.OFPMatch(in_port=1)
-                actions = [ofproto_v1_3_parser.OFPActionOutput(port=3)]
-                inst = [ofproto_v1_3_parser.OFPInstructionActions(ofproto_v1_3_parser.OFPIT_APPLY_ACTIONS, actions)]
-                self.add_flow(3, 1, match, actions)
-                match = ofproto_v1_3_parser.OFPMatch(in_port=3)
-                actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
-                inst = [ofproto_v1_3_parser.OFPInstructionActions(ofproto_v1_3_parser.OFPIT_APPLY_ACTIONS, actions)]
-                self.add_flow(3, 1, match, actions)
+                self.topo_shape.send_flows_for_backup_path(result)
+                self.topo_shape.send_flows_for_backup_path(reverted_result)
 
         elif port_attr.state == 0:
             self.topo_shape.print_links(" Link Up")
@@ -281,6 +255,51 @@ class TopoStructure():
         # This structure
         self.link_backup = {}
 
+    def add_flow(self, datapath, priority, match, actions, buffer_id=None):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
+                                             actions)]
+        if buffer_id:
+            mod = parser.OFPFlowMod(datapath=datapath, buffer_id=buffer_id,
+                                    priority=priority, match=match,
+                                    instructions=inst)
+        else:
+            mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
+                                    match=match, instructions=inst)
+        datapath.send_msg(mod)
+
+
+    def send_flows_for_backup_path(self, bk_path):
+        u_dpids = self.find_unique_dpid_inlinklist(bk_path)
+        visited_dpids = []
+        for temp_dpid in u_dpids:
+            ports = self.find_ports_for_dpid(temp_dpid, bk_path)
+            if len(ports) == 2:
+                visited_dpids.append(temp_dpid)
+                match = ofproto_v1_3_parser.OFPMatch(in_port=ports[0])
+                actions = [ofproto_v1_3_parser.OFPActionOutput(port=ports[1])]
+                self.add_flow(self.get_dp_switch_with_id(temp_dpid), 1, match, actions)
+                match = ofproto_v1_3_parser.OFPMatch(in_port=ports[1])
+                actions = [ofproto_v1_3_parser.OFPActionOutput(port=ports[0])]
+                self.add_flow(self.get_dp_switch_with_id(temp_dpid), 1, match, actions)
+            elif len(ports) > 2:
+                visited_dpids.append(temp_dpid)
+                print("Need to be implemented.")
+
+        end_points = [x for x in u_dpids if x not in visited_dpids]
+        if len(end_points) > 2:
+            print("There is something wrong. There is two endpoints for a link")
+
+        for temp_dpid_endpoints in end_points:
+            other_port = self.find_ports_for_dpid(temp_dpid_endpoints, bk_path)
+            match = ofproto_v1_3_parser.OFPMatch(in_port=1)
+            actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
+            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoints), 1, match, actions)
+            match = ofproto_v1_3_parser.OFPMatch(in_port=other_port[0])
+            actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
+            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoints), 1, match, actions)
 
     """
     Based on shortest_path_node, the functions finds a backup path for the link object Link.
@@ -373,7 +392,7 @@ class TopoStructure():
         self.topo_raw_links.append(link)
 
     """
-    Check if a link with specific nodes exists.
+    Check if a link with specific two endpoints exists.
     """
     def check_link(self, sdpid, sport, ddpid, dport):
         for i, link in self.topo_raw_links:
@@ -381,6 +400,30 @@ class TopoStructure():
                     (link.src.dpid, link.src.port_no), (link.dst.dpid, link.dst.port_no)):
                 return True
         return False
+
+    """
+    Returns list of ports in a list of link with dpid
+    """
+    def find_ports_for_dpid(self,dpid, link_list):
+        port_ids = []
+        for l in link_list:
+            if l.src.dpid == dpid:
+                port_ids.append(l.src.port_no)
+            elif l.dst.dpid == dpid:
+                port_ids.append(l.dst.port_no)
+        return port_ids
+
+    """
+    Returns list of unique dpids in a list of links
+    """
+    def find_unique_dpid_inlinklist(self,link_list):
+        dp_ids = []
+        for l in link_list:
+            if l.dst.dpid not in dp_ids:
+                dp_ids.append(l.dst.dpid)
+            elif l.src.dpid not in dp_ids:
+                dp_ids.append(dp_ids.append(dp_ids))
+        return dp_ids
 
     """
     Finds the shortest path from source s to all other nodes.
