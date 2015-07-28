@@ -100,6 +100,8 @@ class SimpleSwitch13(app_manager.RyuApp):
         msg = ev.msg
         print "#############################################"
         datapath = msg.datapath
+        parser = datapath.ofproto_parser
+        ofproto = datapath.ofproto
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
         port = msg.match['in_port']
@@ -126,6 +128,48 @@ class SimpleSwitch13(app_manager.RyuApp):
             self.mac_to_port[dpid][src] = in_port
 
             print ("mac_to_port: "+str(self.mac_to_port))
+
+            # learn a mac address to avoid FLOOD next time.
+            self.mac_to_port[dpid][src] = in_port
+
+            if dst in self.mac_to_port[dpid]:
+                out_port = self.mac_to_port[dpid][dst]
+            else:
+                out_port = ofproto.OFPP_FLOOD
+
+            actions = [parser.OFPActionOutput(out_port)]
+
+            # install a flow to avoid packet_in next time
+            if out_port != ofproto.OFPP_FLOOD:
+                match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+                # verify if we have a valid buffer_id, if yes avoid to send both
+                # flow_mod & packet_out
+                if msg.buffer_id != ofproto.OFP_NO_BUFFER:
+                    self.add_flow(datapath, 1, match, actions, msg.buffer_id)
+                    return
+                else:
+                    self.add_flow(datapath, 1, match, actions)
+
+            data = None
+            if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+                data = msg.data
+
+            out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
+                                      in_port=in_port, actions=actions, data=data)
+            datapath.send_msg(out)
+        else:
+            eth = pkt.get_protocols(ethernet.ethernet)[0]
+
+            eth_dst = eth.dst
+            eth_src = eth.src
+
+            dpid = datapath.id
+
+            shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(eth.src.dpid)
+
+            print("\t\tNew shortest_path_hubs: {0}"
+                  "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
+
     ###################################################################################
     """
     The event EventSwitchEnter will trigger the activation of get_topology_data().
@@ -254,8 +298,9 @@ class TopoStructure():
             mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
                                     match=match, instructions=inst)
         datapath.send_msg(mod)
-
-
+    """
+    Gets list of baklc up link and then based on them it sends flows to the switch.
+    """
     def send_flows_for_backup_path(self, bk_path):
         u_dpids = self.find_unique_dpid_inlinklist(bk_path)
         visited_dpids = []
@@ -292,6 +337,23 @@ class TopoStructure():
     def find_backup_path(self, link, shortest_path_node):
         s = link.src.dpid
         d = link.dst.dpid
+        if d==s:
+            print("Link Error")
+        # The bk_path is a list of DPIDs that the path must go through to reach d from s
+        bk_path = []
+        bk_path.append(d)
+        while d != s:
+            if d in shortest_path_node:
+                d = shortest_path_node[d]
+            bk_path.append(d)
+
+        return bk_path
+
+    """
+    Based on shortest_path_node, the functions finds a shorted path between source s and destination d.
+    Where d and s are dpid.
+    """
+    def find_path(self, s, d, shortest_path_node):
         if d==s:
             print("Link Error")
         # The bk_path is a list of DPIDs that the path must go through to reach d from s
