@@ -1,6 +1,9 @@
 # RyuApps
 Creates a simple Ryu app using the tutorials and then adds on to it. 
 
+# How topology discovery works?
+In order to answer that question read the following [page](http://vlkan.com/blog/post/2013/08/06/sdn-discovery/). 
+
 #Files
 
 ### Errors.md
