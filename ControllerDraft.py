@@ -158,18 +158,30 @@ class SimpleSwitch13(app_manager.RyuApp):
                                       in_port=in_port, actions=actions, data=data)
             datapath.send_msg(out)
         else:
-            eth = pkt.get_protocols(ethernet.ethernet)[0]
+            eth = pkt.get_protocols(ethernet)[0]
 
             eth_dst = eth.dst
             eth_src = eth.src
-
+            type_field = eth.ethertype
             dpid = datapath.id
 
-            shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(eth.src.dpid)
+            current_switches = self.topo_shape.get_switches_dpid()
+            #if type_field != 0x88F7 and type_field != 0x86DD: # and type_field != 0x86DD and type_field != 0x0800 :
+            print (current_switches)
+            if dpid in current_switches:
+                shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(dpid)
 
-            print("\t\tNew shortest_path_hubs: {0}"
-                  "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
+                print("\t\tNew shortest_path_hubs: {0}"
+                      "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
+                print("eth_dst: {0} eth_src: {1}".format(eth_dst, eth_src))
+                found_path_dpid = self.topo_shape.find_path(s=eth_dst, d=eth_src, s_p_n=shortest_path_node)
+                found_path_links = self.topo_shape.convert_dpid_path_to_links(found_path_dpid)
 
+                self.topo_shape.print_input_links(list_links=found_path_links)
+                reverted_found_path_links = self.topo_shape.revert_link_list(link_list=found_path_links)
+
+                self.topo_shape.send_flows_for_backup_path(found_path_links)
+                self.topo_shape.send_flows_for_backup_path(reverted_found_path_links)
     ###################################################################################
     """
     The event EventSwitchEnter will trigger the activation of get_topology_data().
@@ -298,6 +310,7 @@ class TopoStructure():
             mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
                                     match=match, instructions=inst)
         datapath.send_msg(mod)
+
     """
     Gets list of baklc up link and then based on them it sends flows to the switch.
     """
@@ -333,6 +346,7 @@ class TopoStructure():
 
     """
     Based on shortest_path_node, the functions finds a backup path for the link object Link.
+    Return a list of dpids that the msg has to go though in order to reach destination
     """
     def find_backup_path(self, link, shortest_path_node):
         s = link.src.dpid
@@ -352,19 +366,21 @@ class TopoStructure():
     """
     Based on shortest_path_node, the functions finds a shorted path between source s and destination d.
     Where d and s are dpid.
+    Return a list of dpids that the msg has to go though in order to reach destination
     """
-    def find_path(self, s, d, shortest_path_node):
-        if d==s:
+    def find_path(self, s, d, s_p_n):
+        if d == s:
             print("Link Error")
         # The bk_path is a list of DPIDs that the path must go through to reach d from s
-        bk_path = []
-        bk_path.append(d)
+        found_path = []
+        found_path.append(d)
         while d != s:
-            if d in shortest_path_node:
-                d = shortest_path_node[d]
-            bk_path.append(d)
+            #print "d: "+str(d)+"   s: "+str(s)
+            if d in s_p_n:
+                d = s_p_n[d]
+            found_path.append(d)
 
-        return bk_path
+        return found_path
 
     """
     This reverts the link object in the link list.
@@ -408,6 +424,12 @@ class TopoStructure():
         print(" \t" + str(func_str) + ": Current Switches:")
         for s in self.topo_raw_switches:
             print (" \t\t" + str(s))
+
+    def get_switches_dpid(self):
+        sw_dpids = []
+        for s in self.topo_raw_switches:
+            sw_dpids.append(s.dp.id)
+        return sw_dpids
 
     """
     Returns a datapath with id set to dpid
