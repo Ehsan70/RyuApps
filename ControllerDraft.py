@@ -19,12 +19,8 @@ from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, DEAD_DISP
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3, ofproto_v1_3_parser
 from ryu.lib.packet import packet
-
 from ryu.lib.packet.ethernet import ethernet
-from ryu.lib.packet.icmp import icmp
-from ryu.lib.packet.ipv6 import ipv6
 from ryu.lib.packet.arp import arp
-
 from ryu.topology import event
 from ryu.topology.api import get_all_switch, get_all_link, get_switch, get_link
 from ryu.lib import dpid as dpid_lib
@@ -103,7 +99,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
         dpid = datapath.id
-        self.mac_to_port.setdefault(dpid, {})
+
         port = msg.match['in_port']
         pkt = packet.Packet(data=msg.data)
 
@@ -122,66 +118,49 @@ class SimpleSwitch13(app_manager.RyuApp):
             print ("pkt_arp:dst_mac: " + str(pkt_arp.dst_mac))
             print ("pkt_arp:src_mac: " + str(pkt_arp.src_mac))
 
-            dst = pkt_arp.dst_mac
-            src = pkt_arp.src_mac
+            d_ip = pkt_arp.dst_ip
+            s_ip = pkt_arp.src_ip
+            print ("src ip : {0}   dst ip: {1}".format(s_ip, d_ip))
+
             in_port = msg.match['in_port']
-            self.mac_to_port[dpid][src] = in_port
 
-            print ("mac_to_port: "+str(self.mac_to_port))
-
-            # learn a mac address to avoid FLOOD next time.
-            self.mac_to_port[dpid][src] = in_port
-
-            if dst in self.mac_to_port[dpid]:
-                out_port = self.mac_to_port[dpid][dst]
+            # This is where ip address of hosts is learnt.
+            resu = self.topo_shape.check_ip_in_cache(s_ip)
+            print("resu: "+str(resu))
+            if resu == -1:
+                self.topo_shape.ip_to_dpid_port.setdefault(dpid, {})
+                self.topo_shape.ip_to_dpid_port[dpid][s_ip] = in_port
             else:
-                out_port = ofproto.OFPP_FLOOD
+                self.topo_shape.ip_to_dpid_port[resu][s_ip] = in_port
+            print ("ip_to_dpid_port: "+str(self.topo_shape.ip_to_dpid_port))
 
-            actions = [parser.OFPActionOutput(out_port)]
-
-            # install a flow to avoid packet_in next time
-            if out_port != ofproto.OFPP_FLOOD:
-                match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+        dst_mac = pkt_arp.dst_mac
+        
+        # check if there is an entry for dpid in cache
+        if self.topo_shape.check_dpid_in_cache(dpid):
+            # check if that entry stores that destination ip info (i.e. d_ip)
+            if d_ip in self.topo_shape.ip_to_dpid_port[dpid]:
+                # if it does, send a flow to switch (i.e. dpid)
+                out_port = self.topo_shape.ip_to_dpid_port[dpid][d_ip]
+                actions = [parser.OFPActionOutput(out_port)]
+                match = parser.OFPMatch(in_port=in_port, eth_dst=dst_mac)
                 # verify if we have a valid buffer_id, if yes avoid to send both
-                # flow_mod & packet_out
                 if msg.buffer_id != ofproto.OFP_NO_BUFFER:
                     self.add_flow(datapath, 1, match, actions, msg.buffer_id)
                     return
                 else:
                     self.add_flow(datapath, 1, match, actions)
-
-            data = None
-            if msg.buffer_id == ofproto.OFP_NO_BUFFER:
-                data = msg.data
-
-            out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
-                                      in_port=in_port, actions=actions, data=data)
-            datapath.send_msg(out)
+            else:
+                # The cache doesnt have the out port so packet has to be flooded out
+                out_port = ofproto.OFPP_FLOOD
+                actions = [parser.OFPActionOutput(out_port)]
+                data = None
+                if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+                    data = msg.data
         else:
-            eth = pkt.get_protocols(ethernet)[0]
+            print("Droping ARP fpr dpid: {0}".format(dpid))
 
-            eth_dst = eth.dst
-            eth_src = eth.src
-            type_field = eth.ethertype
-            dpid = datapath.id
 
-            current_switches = self.topo_shape.get_switches_dpid()
-            #if type_field != 0x88F7 and type_field != 0x86DD: # and type_field != 0x86DD and type_field != 0x0800 :
-            print (current_switches)
-            if dpid in current_switches:
-                shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(dpid)
-
-                print("\t\tNew shortest_path_hubs: {0}"
-                      "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
-                print("eth_dst: {0} eth_src: {1}".format(eth_dst, eth_src))
-                found_path_dpid = self.topo_shape.find_path(s=eth_dst, d=eth_src, s_p_n=shortest_path_node)
-                found_path_links = self.topo_shape.convert_dpid_path_to_links(found_path_dpid)
-
-                self.topo_shape.print_input_links(list_links=found_path_links)
-                reverted_found_path_links = self.topo_shape.revert_link_list(link_list=found_path_links)
-
-                self.topo_shape.send_flows_for_backup_path(found_path_links)
-                self.topo_shape.send_flows_for_backup_path(reverted_found_path_links)
     ###################################################################################
     """
     The event EventSwitchEnter will trigger the activation of get_topology_data().
@@ -295,6 +274,26 @@ class TopoStructure():
 
         # This structure
         self.link_backup = {}
+
+        self.ip_to_dpid_port = {}
+
+    """
+    Checks if an ip is in self.ip_to_dpid_port under any of dpids
+    """
+    def check_ip_in_cache(self, ip):
+        for temp_dpid in self.ip_to_dpid_port.keys():
+            if ip in self.ip_to_dpid_port[temp_dpid]:
+                return temp_dpid
+        return -1
+
+    """
+    Checks if an dpid is in self.ip_to_dpid_port
+    """
+    def check_dpid_in_cache(self, in_dpid):
+        if in_dpid in self.ip_to_dpid_port.keys():
+            return True
+        else:
+            return False
 
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
         ofproto = datapath.ofproto
@@ -431,6 +430,11 @@ class TopoStructure():
             sw_dpids.append(s.dp.id)
         return sw_dpids
 
+    def get_switches_str_dpid(self):
+        sw_dpids = []
+        for s in self.topo_raw_switches:
+            sw_dpids.append(dpid_lib.dpid_to_str(s.dp.id))
+        return sw_dpids
     """
     Returns a datapath with id set to dpid
     """
