@@ -42,6 +42,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         self.mac_to_port = {}
         # Holds the topology data and structure
         self.topo_shape = TopoStructure()
+        self.done = 0
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -103,52 +104,22 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         port = msg.match['in_port']
         pkt = packet.Packet(data=msg.data)
+        self.logger.info("packet-in: %s" % (pkt,))
 
-        # Uncomment the blow if you want the msg printed.
-        #self.logger.info("packet-in: %s" % (pkt,))
+        if self.done == 0:
+            shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(dpid)
+            print "\t Shortest Path in packet_in:"
+            print("\t\tNew shortest_path_hubs: {0}"
+                  "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
 
-        # This 'if condition' is for learning the ip addresses of hosts.
-        pkt_arp_list = pkt.get_protocols(arp)
-        if pkt_arp_list:
-            print "datapath id: "+str(dpid)
-            print "port: "+str(port)
-
-            pkt_arp = pkt_arp_list[0]
-            print ("pkt_arp: " + str(pkt_arp))
-            print ("pkt_arp:dst_ip: " + str(pkt_arp.dst_ip))
-            print ("pkt_arp:src_ip: " + str(pkt_arp.src_ip))
-            print ("pkt_arp:dst_mac: " + str(pkt_arp.dst_mac))
-            print ("pkt_arp:src_mac: " + str(pkt_arp.src_mac))
-
-            d_ip = pkt_arp.dst_ip
-            s_ip = pkt_arp.src_ip
-
-            in_port = msg.match['in_port']
-
-            # This is where ip address of hosts is learnt.
-            resu = self.topo_shape.check_ip_in_cache(s_ip)
-            print("resu: "+str(resu))
-            if resu == -1:
-                self.topo_shape.ip_to_dpid_port.setdefault(dpid, {})
-                self.topo_shape.ip_to_dpid_port[dpid][s_ip] = in_port
-            else:
-                self.topo_shape.ip_to_dpid_port[resu][s_ip] = in_port
-            print ("ip_to_dpid_port: "+str(self.topo_shape.ip_to_dpid_port))
-
-        # This section figures out the flows that need to be inserted into switches of network
-        pkt_eth = pkt.get_protocols(ethernet.ethernet)[0]
-
-        dst_mac = pkt_eth.dst
-        src_mac = pkt_eth.src
-        eth_type = pkt_eth.ethertype
-        if pkt_arp_list:
-            if eth_type in ETH_ADDRESSES:
-                pass
-                # Remember that if the msg is multicast you cannot flood it because the network has loop
-            else:
-                pass
-                # Remember that if the message is onecast you need to create a path for it and then do packet_out
-
+            for temp_dst_dpid in reversed(self.topo_shape.get_switches_dpid()):
+                if temp_dst_dpid != dpid:
+                    temp_path = self.topo_shape.convert_dpid_path_to_links(
+                        self.topo_shape.find_path(s=dpid, d=temp_dst_dpid, s_p_n=shortest_path_node))
+                    reverted_temp_path = self.topo_shape.revert_link_list(link_list=temp_path)
+                    self.topo_shape.send_flows_for_path(temp_path)
+                    self.topo_shape.send_flows_for_path(reverted_temp_path)
+            self.done=1
     ###################################################################################
     """
     The event EventSwitchEnter will trigger the activation of get_topology_data().
@@ -239,8 +210,8 @@ class SimpleSwitch13(app_manager.RyuApp):
                 reverted_result = self.topo_shape.revert_link_list(link_list=result)
                 self.topo_shape.print_input_links(list_links=reverted_result)
 
-                self.topo_shape.send_flows_for_backup_path(result)
-                self.topo_shape.send_flows_for_backup_path(reverted_result)
+                self.topo_shape.send_flows_for_path(result)
+                self.topo_shape.send_flows_for_path(reverted_result)
 
         elif port_attr.state == 0:
             self.topo_shape.print_links(" Link Up")
@@ -298,13 +269,15 @@ class TopoStructure():
         datapath.send_msg(mod)
 
     """
-    Gets list of baklc up link and then based on them it sends flows to the switch.
+    Gets list of back up link and then based on them it sends flows to the switch.
+    Note that it takes care of nodes in the middle very well. But for the endpoints, it assumes that the
+    host is connected to port 1.
     """
-    def send_flows_for_backup_path(self, bk_path):
-        u_dpids = self.find_unique_dpid_inlinklist(bk_path)
+    def send_flows_for_path(self, in_path):
+        u_dpids = self.find_unique_dpid_inlinklist(in_path)
         visited_dpids = []
         for temp_dpid in u_dpids:
-            ports = self.find_ports_for_dpid(temp_dpid, bk_path)
+            ports = self.find_ports_for_dpid(temp_dpid, in_path)
             if len(ports) == 2:
                 visited_dpids.append(temp_dpid)
                 match = ofproto_v1_3_parser.OFPMatch(in_port=ports[0])
@@ -322,7 +295,53 @@ class TopoStructure():
             print("There is something wrong. There is two endpoints for a link")
 
         for temp_dpid_endpoints in end_points:
-            other_port = self.find_ports_for_dpid(temp_dpid_endpoints, bk_path)
+            other_port = self.find_ports_for_dpid(temp_dpid_endpoints, in_path)
+            match = ofproto_v1_3_parser.OFPMatch(in_port=1)
+            actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
+            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoints), 1, match, actions)
+            match = ofproto_v1_3_parser.OFPMatch(in_port=other_port[0])
+            actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
+            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoints), 1, match, actions)
+
+    """
+    Gets list of link and then based on them it sends flows only to the switches in the midpoints.
+    That is the switch in the middle of path not at the endpoints
+    Note that it only takes care of nodes in the middle very well.
+    """
+    def send_midpoint_flows_for_path(self, in_path):
+        u_dpids = self.find_unique_dpid_inlinklist(in_path)
+        for temp_dpid in u_dpids:
+            ports = self.find_ports_for_dpid(temp_dpid, in_path)
+            if len(ports) == 2:
+                match = ofproto_v1_3_parser.OFPMatch(in_port=ports[0])
+                actions = [ofproto_v1_3_parser.OFPActionOutput(port=ports[1])]
+                self.add_flow(self.get_dp_switch_with_id(temp_dpid), 1, match, actions)
+                match = ofproto_v1_3_parser.OFPMatch(in_port=ports[1])
+                actions = [ofproto_v1_3_parser.OFPActionOutput(port=ports[0])]
+                self.add_flow(self.get_dp_switch_with_id(temp_dpid), 1, match, actions)
+            elif len(ports) > 2:
+                print("Need to be implemented.")
+
+    """
+    Gets list of link and then based on them it sends flows only to the switches in the endpoints.
+    Taking care of end points is a bit tricky
+    """
+    def send_endpoint_flows_for_path(self, in_path):
+        u_dpids = self.find_unique_dpid_inlinklist(in_path)
+        visited_dpids = []
+        for temp_dpid in u_dpids:
+            ports = self.find_ports_for_dpid(temp_dpid, in_path)
+            if len(ports) == 2:
+                visited_dpids.append(temp_dpid)
+            elif len(ports) > 2:
+                visited_dpids.append(temp_dpid)
+
+        end_points = [x for x in u_dpids if x not in visited_dpids]
+        if len(end_points) > 2:
+            print("There is something wrong. There is two endpoints for a link")
+
+        for temp_dpid_endpoints in end_points:
+            other_port = self.find_ports_for_dpid(temp_dpid_endpoints, in_path)
             match = ofproto_v1_3_parser.OFPMatch(in_port=1)
             actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
             self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoints), 1, match, actions)
@@ -350,14 +369,14 @@ class TopoStructure():
         return bk_path
 
     """
-    Based on shortest_path_node, the functions finds a shorted path between source s and destination d.
+    Based on shortest_path_node (s_p_n), the functions finds a shorted path between source s and destination d.
     Where d and s are dpid.
     Return a list of dpids that the msg has to go though in order to reach destination
     """
     def find_path(self, s, d, s_p_n):
         if d == s:
             print("Link Error")
-        # The bk_path is a list of DPIDs that the path must go through to reach d from s
+        # The found_path is a list of DPIDs that the path must go through to reach d from s
         found_path = []
         found_path.append(d)
         while d != s:
@@ -472,7 +491,7 @@ class TopoStructure():
         return False
 
     """
-    Returns list of ports in a list of link with dpid
+    Returns list of port_no in a list of link with dpid
     """
     def find_ports_for_dpid(self,dpid, link_list):
         port_ids = []
