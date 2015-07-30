@@ -104,7 +104,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         pkt = packet.Packet(data=msg.data)
 
         # Uncomment the blow if you want the msg printed.
-        #self.logger.info("packet-in: %s" % (pkt,))
+        self.logger.info("packet-in: %s" % (pkt,))
 
         pkt_arp_list = pkt.get_protocols(arp)
         if pkt_arp_list:
@@ -133,32 +133,6 @@ class SimpleSwitch13(app_manager.RyuApp):
             else:
                 self.topo_shape.ip_to_dpid_port[resu][s_ip] = in_port
             print ("ip_to_dpid_port: "+str(self.topo_shape.ip_to_dpid_port))
-
-        dst_mac = pkt_arp.dst_mac
-        
-        # check if there is an entry for dpid in cache
-        if self.topo_shape.check_dpid_in_cache(dpid):
-            # check if that entry stores that destination ip info (i.e. d_ip)
-            if d_ip in self.topo_shape.ip_to_dpid_port[dpid]:
-                # if it does, send a flow to switch (i.e. dpid)
-                out_port = self.topo_shape.ip_to_dpid_port[dpid][d_ip]
-                actions = [parser.OFPActionOutput(out_port)]
-                match = parser.OFPMatch(in_port=in_port, eth_dst=dst_mac)
-                # verify if we have a valid buffer_id, if yes avoid to send both
-                if msg.buffer_id != ofproto.OFP_NO_BUFFER:
-                    self.add_flow(datapath, 1, match, actions, msg.buffer_id)
-                    return
-                else:
-                    self.add_flow(datapath, 1, match, actions)
-            else:
-                # The cache doesnt have the out port so packet has to be flooded out
-                out_port = ofproto.OFPP_FLOOD
-                actions = [parser.OFPActionOutput(out_port)]
-                data = None
-                if msg.buffer_id == ofproto.OFP_NO_BUFFER:
-                    data = msg.data
-        else:
-            print("Droping ARP fpr dpid: {0}".format(dpid))
 
 
     ###################################################################################
@@ -276,6 +250,8 @@ class TopoStructure():
         self.link_backup = {}
 
         self.ip_to_dpid_port = {}
+        self.mac_to_dpid = {}
+
 
     """
     Checks if an ip is in self.ip_to_dpid_port under any of dpids
@@ -419,10 +395,15 @@ class TopoStructure():
         for l in list_links:
             print (" \t\t" + str(l))
 
+
+
     def print_switches(self, func_str=None):
         print(" \t" + str(func_str) + ": Current Switches:")
         for s in self.topo_raw_switches:
             print (" \t\t" + str(s))
+            print("\t\t\t Printing HW address")
+            for p in s.ports:
+                print (" \t\t\t" + str(p.hw_addr))
 
     def get_switches_dpid(self):
         sw_dpids = []
