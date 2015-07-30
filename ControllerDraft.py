@@ -31,6 +31,7 @@ from threading import Lock
 UP = 1
 DOWN = 0
 
+ETH_ADDRESSES = [0x0802, 0x88CC, 0x8808, 0x8809, 0x0800, 0x86DD, 0x88F7]
 
 class SimpleSwitch13(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -104,8 +105,9 @@ class SimpleSwitch13(app_manager.RyuApp):
         pkt = packet.Packet(data=msg.data)
 
         # Uncomment the blow if you want the msg printed.
-        self.logger.info("packet-in: %s" % (pkt,))
+        #self.logger.info("packet-in: %s" % (pkt,))
 
+        # This 'if condition' is for learning the ip addresses of hosts.
         pkt_arp_list = pkt.get_protocols(arp)
         if pkt_arp_list:
             print "datapath id: "+str(dpid)
@@ -120,7 +122,6 @@ class SimpleSwitch13(app_manager.RyuApp):
 
             d_ip = pkt_arp.dst_ip
             s_ip = pkt_arp.src_ip
-            print ("src ip : {0}   dst ip: {1}".format(s_ip, d_ip))
 
             in_port = msg.match['in_port']
 
@@ -134,6 +135,19 @@ class SimpleSwitch13(app_manager.RyuApp):
                 self.topo_shape.ip_to_dpid_port[resu][s_ip] = in_port
             print ("ip_to_dpid_port: "+str(self.topo_shape.ip_to_dpid_port))
 
+        # This section figures out the flows that need to be inserted into switches of network
+        pkt_eth = pkt.get_protocols(ethernet.ethernet)[0]
+
+        dst_mac = pkt_eth.dst
+        src_mac = pkt_eth.src
+        eth_type = pkt_eth.ethertype
+        if pkt_arp_list:
+            if eth_type in ETH_ADDRESSES:
+                pass
+                # Remember that if the msg is multicast you cannot flood it because the network has loop
+            else:
+                pass
+                # Remember that if the message is onecast you need to create a path for it and then do packet_out
 
     ###################################################################################
     """
@@ -235,7 +249,6 @@ class SimpleSwitch13(app_manager.RyuApp):
         ###################################################################################
         ###################################################################################
 
-
 """
 This class holds the list of links and switches in the topology and it provides some useful functions
 """
@@ -244,14 +257,12 @@ class TopoStructure():
         self.topo_raw_switches = []
         self.topo_raw_links = []
         self.topo_links = []
+        # Todo: The lock should be removed later.
         self.lock = Lock()
 
-        # This structure
-        self.link_backup = {}
-
+        # Record where each host is connected to.
+        # For example {1: {'10.0.0.1': 2}} means 10.0.0.1 is connected to dpid 1 using port 2
         self.ip_to_dpid_port = {}
-        self.mac_to_dpid = {}
-
 
     """
     Checks if an ip is in self.ip_to_dpid_port under any of dpids
@@ -395,27 +406,32 @@ class TopoStructure():
         for l in list_links:
             print (" \t\t" + str(l))
 
-
-
     def print_switches(self, func_str=None):
         print(" \t" + str(func_str) + ": Current Switches:")
         for s in self.topo_raw_switches:
             print (" \t\t" + str(s))
-            print("\t\t\t Printing HW address")
+            print("\t\t\t Printing HW address:")
             for p in s.ports:
-                print (" \t\t\t" + str(p.hw_addr))
+                print ("\t\t\t " + str(p.hw_addr))
 
+    """
+    Returns a list of dpids of switches.
+    """
     def get_switches_dpid(self):
         sw_dpids = []
         for s in self.topo_raw_switches:
             sw_dpids.append(s.dp.id)
         return sw_dpids
 
+    """
+    Returns a list of string dpids of switches.
+    """
     def get_switches_str_dpid(self):
         sw_dpids = []
         for s in self.topo_raw_switches:
             sw_dpids.append(dpid_lib.dpid_to_str(s.dp.id))
         return sw_dpids
+
     """
     Returns a datapath with id set to dpid
     """
