@@ -129,7 +129,7 @@ class SimpleSwitch13(app_manager.RyuApp):
             in_port = msg.match['in_port']
 
             # This is where ip address of hosts is learnt.
-            resu = self.topo_shape.check_ip_in_cache(s_ip)
+            resu = self.topo_shape.get_dpid_for_ip(s_ip)
             print("resu: "+str(resu))
             if resu == -1:
                 self.topo_shape.ip_to_dpid_port.setdefault(dpid, {})
@@ -143,9 +143,20 @@ class SimpleSwitch13(app_manager.RyuApp):
                 self.topo_shape.ip_to_dpid_port[dpid]["connected_host_mac"] = s_mac
                 self.topo_shape.ip_to_dpid_port[dpid]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
                     in_dpid=dpid, in_port_no=in_port)
+
             print ("ip_to_dpid_port: "+str(self.topo_shape.ip_to_dpid_port))
 
-
+            shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(dpid)
+            print "\t Shortest Path in ARP packet_in:"
+            print("\t\tNew shortest_path_hubs: {0}"
+                  "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
+            dst_dpid_for_ip = self.topo_shape.get_dpid_for_ip(ip=d_ip)
+            if dst_dpid_for_ip != -1:
+                temp_dpid_path = self.topo_shape.find_path(s=dpid, d=dst_dpid_for_ip, s_p_n=shortest_path_node)
+                temp_link_path = self.topo_shape.convert_dpid_path_to_links(dpid_list=temp_dpid_path)
+                reverted_temp_link_path = self.topo_shape.revert_link_list(link_list=temp_link_path)
+                self.topo_shape.send_endpoint_flows_for_path(temp_link_path)
+                self.topo_shape.send_endpoint_flows_for_path(reverted_temp_link_path)
 
 
         # when done ==1 is in the condition the code is not executed :) easier that commenting
@@ -155,7 +166,7 @@ class SimpleSwitch13(app_manager.RyuApp):
             print("\t\tNew shortest_path_hubs: {0}"
                   "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
 
-            for temp_dst_dpid in reversed(self.topo_shape.get_switches_dpid()):
+            for temp_dst_dpid in self.topo_shape.get_switches_dpid():
                 if temp_dst_dpid != dpid:
                     temp_path = self.topo_shape.convert_dpid_path_to_links(
                         self.topo_shape.find_path(s=dpid, d=temp_dst_dpid, s_p_n=shortest_path_node))
@@ -166,7 +177,7 @@ class SimpleSwitch13(app_manager.RyuApp):
             self.done = 1
 
         # This prints list of hw addresses of the port for given dpid
-        print(str(self.topo_shape.get_hw_addresses_for_dpid(in_dpid=dpid)))
+        #print(str(self.topo_shape.get_hw_addresses_for_dpid(in_dpid=dpid)))
 
     ###################################################################################
     """
@@ -284,10 +295,11 @@ class TopoStructure():
         self.ip_to_dpid_port = {}
 
     """
-    Checks if an ip is in self.ip_to_dpid_port under any of dpids.
+    Checks if the ip address in_ip is connected to any switch. If it is it return the dpid of that switch.
+    Otherwise it returns -1.
     Something to now for later: Not sure if I should also if the mac matches.
     """
-    def check_ip_in_cache(self, ip):
+    def get_dpid_for_ip(self, ip):
         for temp_dpid in self.ip_to_dpid_port.keys():
             if ip in self.ip_to_dpid_port[temp_dpid].values():
                 return temp_dpid
@@ -386,6 +398,7 @@ class TopoStructure():
                 visited_dpids.append(temp_dpid)
 
         end_points = [x for x in u_dpids if x not in visited_dpids]
+        print ("end_points: "+str(end_points))
         if len(end_points) > 2:
             print("There is something wrong. There is two endpoints for a link")
 
