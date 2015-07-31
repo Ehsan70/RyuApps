@@ -107,7 +107,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         pkt = packet.Packet(data=msg.data)
         #self.logger.info("packet-in: %s" % (pkt,))
 
-        # This 'if condition' is for learning the ip addresses of hosts.
+        # This 'if condition' is for learning the ip and mac addresses of hosts as well as .
         pkt_arp_list = pkt.get_protocols(arp)
         if pkt_arp_list:
             print "datapath id: "+str(dpid)
@@ -132,24 +132,31 @@ class SimpleSwitch13(app_manager.RyuApp):
             resu = self.topo_shape.get_dpid_for_ip(s_ip)
             print("resu: "+str(resu))
             if resu == -1:
+                # If there is no entry for ip s_ip then add one
                 self.topo_shape.ip_to_dpid_port.setdefault(dpid, {})
-                self.topo_shape.ip_to_dpid_port[dpid]["in_sw_port"] = in_port
+                self.topo_shape.ip_to_dpid_port[dpid]["sw_port_id"] = in_port
                 self.topo_shape.ip_to_dpid_port[dpid]["connected_host_ip"] = s_ip
                 self.topo_shape.ip_to_dpid_port[dpid]["connected_host_mac"] = s_mac
                 self.topo_shape.ip_to_dpid_port[dpid]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
                     in_dpid=dpid, in_port_no=in_port)
             else:
-                self.topo_shape.ip_to_dpid_port[dpid]["in_sw_port"] = in_port
+                # IF there is such an entry for ip address s_ip then just update the values
+                self.topo_shape.ip_to_dpid_port[dpid]["sw_port_id"] = in_port
+                # Updating mac: because a host may get disconnected and new host with same ip but different mac connects
                 self.topo_shape.ip_to_dpid_port[dpid]["connected_host_mac"] = s_mac
+                # get_hw_address_for_port_of_dpid(): gets and mac address of a given port id on specific sw or dpid
                 self.topo_shape.ip_to_dpid_port[dpid]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
                     in_dpid=dpid, in_port_no=in_port)
 
             print ("ip_to_dpid_port: "+str(self.topo_shape.ip_to_dpid_port))
 
-            shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(dpid)
+            # find_shortest_path(): Finds shortest path starting dpid for all nodes.
+            # shortest_path_node: Contains the last node you need to get in order to reach dest from source dpid
+            shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(s=dpid)
             print "\t Shortest Path in ARP packet_in:"
             print("\t\tNew shortest_path_hubs: {0}"
                   "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
+
             dst_dpid_for_ip = self.topo_shape.get_dpid_for_ip(ip=d_ip)
             if dst_dpid_for_ip != -1:
                 temp_dpid_path = self.topo_shape.find_path(s=dpid, d=dst_dpid_for_ip, s_p_n=shortest_path_node)
@@ -158,23 +165,6 @@ class SimpleSwitch13(app_manager.RyuApp):
                 self.topo_shape.send_endpoint_flows_for_path(temp_link_path)
                 self.topo_shape.send_endpoint_flows_for_path(reverted_temp_link_path)
 
-
-        # when done ==1 is in the condition the code is not executed :) easier that commenting
-        if self.done == 1:
-            shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(dpid)
-            print "\t Shortest Path in packet_in:"
-            print("\t\tNew shortest_path_hubs: {0}"
-                  "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
-
-            for temp_dst_dpid in self.topo_shape.get_switches_dpid():
-                if temp_dst_dpid != dpid:
-                    temp_path = self.topo_shape.convert_dpid_path_to_links(
-                        self.topo_shape.find_path(s=dpid, d=temp_dst_dpid, s_p_n=shortest_path_node))
-                    reverted_temp_path = self.topo_shape.revert_link_list(link_list=temp_path)
-                    self.topo_shape.send_flows_for_path(temp_path)
-                    self.topo_shape.send_flows_for_path(reverted_temp_path)
-            time.sleep(1)
-            self.done = 1
 
         # This prints list of hw addresses of the port for given dpid
         #print(str(self.topo_shape.get_hw_addresses_for_dpid(in_dpid=dpid)))
