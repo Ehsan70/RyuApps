@@ -27,6 +27,7 @@ from ryu.lib import dpid as dpid_lib
 from ryu.controller import dpset
 import copy
 from threading import Lock
+import time
 
 UP = 1
 DOWN = 0
@@ -104,9 +105,51 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         port = msg.match['in_port']
         pkt = packet.Packet(data=msg.data)
-        self.logger.info("packet-in: %s" % (pkt,))
+        #self.logger.info("packet-in: %s" % (pkt,))
 
-        if self.done == 0:
+        # This 'if condition' is for learning the ip addresses of hosts.
+        pkt_arp_list = pkt.get_protocols(arp)
+        if pkt_arp_list:
+            print "datapath id: "+str(dpid)
+            print "port: "+str(port)
+
+            pkt_arp = pkt_arp_list[0]
+            print ("pkt_arp: " + str(pkt_arp))
+            print ("pkt_arp:dst_ip: " + str(pkt_arp.dst_ip))
+            print ("pkt_arp:src_ip: " + str(pkt_arp.src_ip))
+            print ("pkt_arp:dst_mac: " + str(pkt_arp.dst_mac))
+            print ("pkt_arp:src_mac: " + str(pkt_arp.src_mac))
+
+            d_ip = pkt_arp.dst_ip
+            s_ip = pkt_arp.src_ip
+
+            d_mac = pkt_arp.dst_mac
+            s_mac = pkt_arp.src_mac
+
+            in_port = msg.match['in_port']
+
+            # This is where ip address of hosts is learnt.
+            resu = self.topo_shape.check_ip_in_cache(s_ip)
+            print("resu: "+str(resu))
+            if resu == -1:
+                self.topo_shape.ip_to_dpid_port.setdefault(dpid, {})
+                self.topo_shape.ip_to_dpid_port[dpid]["in_sw_port"] = in_port
+                self.topo_shape.ip_to_dpid_port[dpid]["connected_host_ip"] = s_ip
+                self.topo_shape.ip_to_dpid_port[dpid]["connected_host_mac"] = s_mac
+                self.topo_shape.ip_to_dpid_port[dpid]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
+                    in_dpid=dpid, in_port_no=in_port)
+            else:
+                self.topo_shape.ip_to_dpid_port[dpid]["in_sw_port"] = in_port
+                self.topo_shape.ip_to_dpid_port[dpid]["connected_host_mac"] = s_mac
+                self.topo_shape.ip_to_dpid_port[dpid]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
+                    in_dpid=dpid, in_port_no=in_port)
+            print ("ip_to_dpid_port: "+str(self.topo_shape.ip_to_dpid_port))
+
+
+
+
+        # when done ==1 is in the condition the code is not executed :) easier that commenting
+        if self.done == 1:
             shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(dpid)
             print "\t Shortest Path in packet_in:"
             print("\t\tNew shortest_path_hubs: {0}"
@@ -119,7 +162,12 @@ class SimpleSwitch13(app_manager.RyuApp):
                     reverted_temp_path = self.topo_shape.revert_link_list(link_list=temp_path)
                     self.topo_shape.send_flows_for_path(temp_path)
                     self.topo_shape.send_flows_for_path(reverted_temp_path)
-            self.done=1
+            time.sleep(1)
+            self.done = 1
+
+        # This prints list of hw addresses of the port for given dpid
+        print(str(self.topo_shape.get_hw_addresses_for_dpid(in_dpid=dpid)))
+
     ###################################################################################
     """
     The event EventSwitchEnter will trigger the activation of get_topology_data().
@@ -236,11 +284,12 @@ class TopoStructure():
         self.ip_to_dpid_port = {}
 
     """
-    Checks if an ip is in self.ip_to_dpid_port under any of dpids
+    Checks if an ip is in self.ip_to_dpid_port under any of dpids.
+    Something to now for later: Not sure if I should also if the mac matches.
     """
     def check_ip_in_cache(self, ip):
         for temp_dpid in self.ip_to_dpid_port.keys():
-            if ip in self.ip_to_dpid_port[temp_dpid]:
+            if ip in self.ip_to_dpid_port[temp_dpid].values():
                 return temp_dpid
         return -1
 
@@ -299,7 +348,7 @@ class TopoStructure():
             match = ofproto_v1_3_parser.OFPMatch(in_port=1)
             actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
             self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoints), 1, match, actions)
-            match = ofproto_v1_3_parser.OFPMatch(in_port=other_port[0])
+            match = ofproto_v1_3_parser.OFPMatch()
             actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
             self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoints), 1, match, actions)
 
@@ -432,6 +481,32 @@ class TopoStructure():
             print("\t\t\t Printing HW address:")
             for p in s.ports:
                 print ("\t\t\t " + str(p.hw_addr))
+
+    """
+    For a specific dpid of switch it return a list of mac addresses for each port of that sw.
+    """
+    def get_hw_addresses_for_dpid(self, in_dpid):
+        list_of_HW_addr = []
+        for s in self.topo_raw_switches:
+            if s.dp.id == in_dpid:
+                for p in s.ports:
+                    list_of_HW_addr.append(p.hw_addr)
+        return list_of_HW_addr
+
+    """
+    For a specific dpid of switch it return a list of mac addresses for each port of that sw.
+    If it could find hw address for the port it will return the addr otherwise it will return -1.
+    """
+    def get_hw_address_for_port_of_dpid(self, in_dpid, in_port_no):
+        for s in self.topo_raw_switches:
+            # here s is a switch object
+            if s.dp.id == in_dpid:
+                for p in s.ports:
+                    # p is the port object
+                    if p.port_no == in_port_no:
+                        return p.hw_addr
+        return -1
+
 
     """
     Returns a list of dpids of switches.
