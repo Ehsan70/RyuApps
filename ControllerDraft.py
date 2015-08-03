@@ -157,6 +157,7 @@ class SimpleSwitch13(app_manager.RyuApp):
             print("\t\tNew shortest_path_hubs: {0}"
                   "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
 
+            # Based on the ip of the destination the dpid of the switch connected to host ip
             dst_dpid_for_ip = self.topo_shape.get_dpid_for_ip(ip=d_ip)
             if dst_dpid_for_ip != -1:
                 temp_dpid_path = self.topo_shape.find_path(s=dpid, d=dst_dpid_for_ip, s_p_n=shortest_path_node)
@@ -164,7 +165,6 @@ class SimpleSwitch13(app_manager.RyuApp):
                 reverted_temp_link_path = self.topo_shape.revert_link_list(link_list=temp_link_path)
                 self.topo_shape.send_endpoint_flows_for_path(temp_link_path)
                 self.topo_shape.send_endpoint_flows_for_path(reverted_temp_link_path)
-
 
         # This prints list of hw addresses of the port for given dpid
         #print(str(self.topo_shape.get_hw_addresses_for_dpid(in_dpid=dpid)))
@@ -181,22 +181,13 @@ class SimpleSwitch13(app_manager.RyuApp):
         self.topo_shape.print_links("EventSwitchEnter")
         self.topo_shape.print_switches("EventSwitchEnter")
 
+    """
+    If switch is failed this event is fired
+    """
     @set_ev_cls(event.EventSwitchLeave, [MAIN_DISPATCHER, CONFIG_DISPATCHER, DEAD_DISPATCHER])
     def handler_switch_leave(self, ev):
+        # Right now it doesn't do anything usefull
         self.logger.info("Not tracking Switches, switch leaved.")
-
-    """
-    This function determines the links and switches currently in the topology
-    """
-    def get_topology_data(self):
-        # Call get_switch() to get the list of objects Switch.
-        self.topo_shape.topo_raw_switches = copy.copy(get_all_switch(self))
-
-        # Call get_link() to get the list of objects Link.
-        self.topo_shape.topo_raw_links = copy.copy(get_all_link(self))
-
-        self.topo_shape.print_links("get_topology_data")
-        self.topo_shape.print_switches("get_topology_data")
 
     ###################################################################################
     """
@@ -304,6 +295,10 @@ class TopoStructure():
         else:
             return False
 
+    """
+    Adds a flow to switch with given datapath. The flow has the given priority. For a given match the flow perform the
+    specified given actions.
+    """
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -375,8 +370,9 @@ class TopoStructure():
 
     """
     Gets list of link and then based on them it sends flows only to the switches in the endpoints.
-    Taking care of end points is a bit tricky
+    Taking care of end points is a bit tricky.
     """
+    # Todo: Need to fix this so that it used the learned port of the hosts
     def send_endpoint_flows_for_path(self, in_path):
         u_dpids = self.find_unique_dpid_inlinklist(in_path)
         visited_dpids = []
@@ -510,9 +506,9 @@ class TopoStructure():
                         return p.hw_addr
         return -1
 
-
     """
     Returns a list of dpids of switches.
+    The switches are learned when they are joined.
     """
     def get_switches_dpid(self):
         sw_dpids = []
@@ -538,6 +534,9 @@ class TopoStructure():
                 return s.dp
         return None
 
+    """
+    Returns the number of current learned switches
+    """
     def switches_count(self):
         return len(self.topo_raw_switches)
 
