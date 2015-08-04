@@ -133,12 +133,10 @@ class SimpleSwitch13(app_manager.RyuApp):
             print("resu: "+str(resu))
             if resu == -1:
                 # If there is no entry for ip s_ip then add one
-                self.topo_shape.ip_cache.ip_to_dpid_port.setdefault(dpid, {})
-                self.topo_shape.ip_cache.ip_to_dpid_port[dpid]["sw_port_no"] = in_port
-                self.topo_shape.ip_cache.ip_to_dpid_port[dpid]["connected_host_ip"] = s_ip
-                self.topo_shape.ip_cache.ip_to_dpid_port[dpid]["connected_host_mac"] = s_mac
-                self.topo_shape.ip_cache.ip_to_dpid_port[dpid]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
-                    in_dpid=dpid, in_port_no=in_port)
+                temp_dict = {"connected_host_mac":s_mac, "sw_port_no":in_port,
+                             "sw_port_mac":self.topo_shape.get_hw_address_for_port_of_dpid(in_dpid=dpid, in_port_no=in_port)}
+                self.topo_shape.ip_cache.add_dpid_host(in_dpid=dpid, in_host_ip=s_ip, **temp_dict)
+
             else:
                 # IF there is such an entry for ip address s_ip then just update the values
                 self.topo_shape.ip_cache.ip_to_dpid_port[dpid]["sw_port_no"] = in_port
@@ -262,14 +260,36 @@ class SimpleSwitch13(app_manager.RyuApp):
         ###################################################################################
         ###################################################################################
 
-
-class host_cache():
+"""
+This holds the hosts information and their connection to switches.
+An instance of this class is used in TopoStructure to save the topo info.
+"""
+class HostCache(object):
     def __init__(self):
         self.ip_to_dpid_port = {}
 
-    def add_dpid_host(self,in_dpid, in_host_ip, in_dict):
+    def get_port_ip_on_dpid(self, in_ip, in_dpid):
+        pass
+        #self.ip_to_dpid_port[]
+
+    """
+    Here is example of **in_dict : {"connected_host_mac":s_mac, "sw_port_no":in_port,
+    "sw_port_mac":self.topo_shape.get_hw_address_for_port_of_dpid(in_dpid=dpid, in_port_no=in_port)}
+    """
+    def add_dpid_host(self,in_dpid, in_host_ip, **in_dict):
         self.ip_to_dpid_port.setdefault(in_dpid, {})
         self.ip_to_dpid_port[in_dpid][in_host_ip]=in_dict
+
+    """
+    Check if host with ip address in_ip is connected to in_dpid switch.
+    If it is connected it will return the port num of switch which the host is connected to.
+    If there no host with that ip connected it will return -1
+    """
+    def get_port_no_connected_to_sw(self, in_dpid, in_ip):
+        if self.ip_to_dpid_port[in_dpid][in_dpid].values() == 0:
+            return -1
+        else:
+            return self.ip_to_dpid_port[in_dpid][in_ip]["sw_port_no"]
 
     """
     Returns number of hosts connected to the switch with given in_dpid
@@ -305,7 +325,7 @@ class host_cache():
 """
 This class holds the list of links and switches in the topology and it provides some useful functions
 """
-class TopoStructure():
+class TopoStructure(object):
     def __init__(self, *args, **kwargs):
         self.topo_raw_switches = []
         self.topo_raw_links = []
@@ -314,8 +334,7 @@ class TopoStructure():
         self.lock = Lock()
 
         # Record where each host is connected to.
-        # For example {1: {'10.0.0.1': 2}} means 10.0.0.1 is connected to dpid 1 using port 2
-        self.ip_cache = host_cache()
+        self.ip_cache = HostCache()
 
     """
     Adds a flow to switch with given datapath. The flow has the given priority. For a given match the flow perform the
@@ -341,11 +360,11 @@ class TopoStructure():
     Note that it takes care of nodes in the middle very well. But for the endpoints, it assumes that the
     host is connected to port 1.
     """
-    def send_flows_for_path(self, in_path):
-        u_dpids = self.find_unique_dpid_inlinklist(in_path)
+    def send_flows_for_path(self, in_link_path):
+        u_dpids = self.find_unique_dpid_inlinklist(in_link_path)
         visited_dpids = []
         for temp_dpid in u_dpids:
-            ports = self.find_ports_for_dpid(temp_dpid, in_path)
+            ports = self.find_ports_for_dpid(temp_dpid, in_link_path)
             if len(ports) == 2:
                 visited_dpids.append(temp_dpid)
                 match = ofproto_v1_3_parser.OFPMatch(in_port=ports[0])
@@ -362,21 +381,60 @@ class TopoStructure():
         if len(end_points) > 2:
             print("There is something wrong. There is two endpoints for a link")
 
-        for temp_dpid_endpoints in end_points:
-            other_port = self.find_ports_for_dpid(temp_dpid_endpoints, in_path)
+        for temp_dpid_endpoint in end_points:
+            # List of port_no in a list of links (in_link_path) with dpid
+            other_port = self.find_ports_for_dpid(temp_dpid_endpoint, in_link_path)
             match = ofproto_v1_3_parser.OFPMatch(in_port=1)
             actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
-            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoints), 1, match, actions)
+            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoint), 1, match, actions)
             match = ofproto_v1_3_parser.OFPMatch()
             actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
-            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoints), 1, match, actions)
+            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoint), 1, match, actions)
 
     """
     Gets list of back up link and then based on them it sends flows to the switch.
     Note that it takes care of nodes in the middle very well.
+    intent: Based on onos definition intent is a set of flows send to switches in order
+    create a path between two endpoints which is this case it's src_ip and dst_ip.
     """
-    def send_flows_for_path(self,src_ip ,dst_ip ,in_path):
-        self.send_midpoint_flows_for_path(in_path=in_path)
+    def create_intent(self, src_ip, dst_ip, in_link_path):
+        # send flows to the switches in the middle of path
+        u_dpids = self.find_unique_dpid_inlinklist(in_link_path)
+        visited_dpids = []
+        for temp_dpid in u_dpids:
+            ports = self.find_ports_for_dpid(temp_dpid, in_link_path)
+            if len(ports) == 2:
+                visited_dpids.append(temp_dpid)
+                match = ofproto_v1_3_parser.OFPMatch(in_port=ports[0])
+                actions = [ofproto_v1_3_parser.OFPActionOutput(port=ports[1])]
+                self.add_flow(self.get_dp_switch_with_id(temp_dpid), 1, match, actions)
+                match = ofproto_v1_3_parser.OFPMatch(in_port=ports[1])
+                actions = [ofproto_v1_3_parser.OFPActionOutput(port=ports[0])]
+                self.add_flow(self.get_dp_switch_with_id(temp_dpid), 1, match, actions)
+            elif len(ports) > 2:
+                visited_dpids.append(temp_dpid)
+                print("Need to be implemented.")
+
+        end_points = [x for x in u_dpids if x not in visited_dpids]
+        if len(end_points) > 2:
+            print("There is something wrong. There is two endpoints for a link")
+        src_host_connected_dpid = self.ip_cache.get_dpid_for_ip(src_ip)
+        dst_host_connected_dpid = self.ip_cache.get_dpid_for_ip(dst_ip)
+        src_host_port_on_sw = self.ip_cache.get_port_no_connected_to_sw(in_dpid=src_host_connected_dpid, in_ip=src_ip)
+        dst_host_port_on_sw = self.ip_cache.get_port_no_connected_to_sw(in_dpid=dst_host_connected_dpid, in_ip=dst_ip)
+
+
+        # Todo:  Continure from here.
+        for temp_dpid_endpoint in end_points:
+            # List of port_no in a list of links (in_link_path) with dpid
+
+            other_port = self.find_ports_for_dpid(temp_dpid_endpoint, in_link_path)
+            match = ofproto_v1_3_parser.OFPMatch(in_port=1)
+            actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
+            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoint), 1, match, actions)
+            match = ofproto_v1_3_parser.OFPMatch()
+            actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
+            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoint), 1, match, actions)
 
     """
     Gets list of link and then based on them it sends flows only to the switches in the midpoints.
@@ -597,9 +655,11 @@ class TopoStructure():
         return False
 
     """
-    Returns list of port_no in a list of link with dpid
+    Returns list of port_no in a list of link with dpid.
+    Note that the link_list has only one path going through switch with given dpid. So there should be
+    no more than two port in the list.
     """
-    def find_ports_for_dpid(self,dpid, link_list):
+    def find_ports_for_dpid(self, dpid, link_list):
         port_ids = []
         for l in link_list:
             if l.src.dpid == dpid:
