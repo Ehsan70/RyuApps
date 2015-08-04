@@ -129,26 +129,26 @@ class SimpleSwitch13(app_manager.RyuApp):
             in_port = msg.match['in_port']
 
             # This is where ip address of hosts is learnt.
-            resu = self.topo_shape.get_dpid_for_ip(s_ip)
+            resu = self.topo_shape.ip_cache.get_dpid_for_ip(s_ip)
             print("resu: "+str(resu))
             if resu == -1:
                 # If there is no entry for ip s_ip then add one
-                self.topo_shape.ip_to_dpid_port.setdefault(dpid, {})
-                self.topo_shape.ip_to_dpid_port[dpid]["sw_port_id"] = in_port
-                self.topo_shape.ip_to_dpid_port[dpid]["connected_host_ip"] = s_ip
-                self.topo_shape.ip_to_dpid_port[dpid]["connected_host_mac"] = s_mac
-                self.topo_shape.ip_to_dpid_port[dpid]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
+                self.topo_shape.ip_cache.ip_to_dpid_port.setdefault(dpid, {})
+                self.topo_shape.ip_cache.ip_to_dpid_port[dpid]["sw_port_no"] = in_port
+                self.topo_shape.ip_cache.ip_to_dpid_port[dpid]["connected_host_ip"] = s_ip
+                self.topo_shape.ip_cache.ip_to_dpid_port[dpid]["connected_host_mac"] = s_mac
+                self.topo_shape.ip_cache.ip_to_dpid_port[dpid]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
                     in_dpid=dpid, in_port_no=in_port)
             else:
                 # IF there is such an entry for ip address s_ip then just update the values
-                self.topo_shape.ip_to_dpid_port[dpid]["sw_port_id"] = in_port
+                self.topo_shape.ip_cache.ip_to_dpid_port[dpid]["sw_port_no"] = in_port
                 # Updating mac: because a host may get disconnected and new host with same ip but different mac connects
-                self.topo_shape.ip_to_dpid_port[dpid]["connected_host_mac"] = s_mac
+                self.topo_shape.ip_cache.ip_to_dpid_port[dpid]["connected_host_mac"] = s_mac
                 # get_hw_address_for_port_of_dpid(): gets and mac address of a given port id on specific sw or dpid
-                self.topo_shape.ip_to_dpid_port[dpid]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
+                self.topo_shape.ip_cache.ip_to_dpid_port[dpid]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
                     in_dpid=dpid, in_port_no=in_port)
 
-            print ("ip_to_dpid_port: "+str(self.topo_shape.ip_to_dpid_port))
+            print ("ip_cache.ip_to_dpid_port: "+str(self.topo_shape.ip_cache.ip_to_dpid_port))
 
             # find_shortest_path(): Finds shortest path starting dpid for all nodes.
             # shortest_path_node: Contains the last node you need to get in order to reach dest from source dpid
@@ -158,11 +158,13 @@ class SimpleSwitch13(app_manager.RyuApp):
                   "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
 
             # Based on the ip of the destination the dpid of the switch connected to host ip
-            dst_dpid_for_ip = self.topo_shape.get_dpid_for_ip(ip=d_ip)
+            dst_dpid_for_ip = self.topo_shape.ip_cache.get_dpid_for_ip(ip=d_ip)
             if dst_dpid_for_ip != -1:
                 temp_dpid_path = self.topo_shape.find_path(s=dpid, d=dst_dpid_for_ip, s_p_n=shortest_path_node)
                 temp_link_path = self.topo_shape.convert_dpid_path_to_links(dpid_list=temp_dpid_path)
                 reverted_temp_link_path = self.topo_shape.revert_link_list(link_list=temp_link_path)
+                self.topo_shape.send_midpoint_flows_for_path(temp_link_path)
+                self.topo_shape.send_midpoint_flows_for_path(reverted_temp_link_path)
                 self.topo_shape.send_endpoint_flows_for_path(temp_link_path)
                 self.topo_shape.send_endpoint_flows_for_path(reverted_temp_link_path)
 
@@ -260,6 +262,46 @@ class SimpleSwitch13(app_manager.RyuApp):
         ###################################################################################
         ###################################################################################
 
+
+class host_cache():
+    def __init__(self):
+        self.ip_to_dpid_port = {}
+
+    def add_dpid_host(self,in_dpid, in_host_ip, in_dict):
+        self.ip_to_dpid_port.setdefault(in_dpid, {})
+        self.ip_to_dpid_port[in_dpid][in_host_ip]=in_dict
+
+    """
+    Returns number of hosts connected to the switch with given in_dpid
+    """
+    def get_number_of_hosts_connected_to_dpid(self, in_dpid):
+        return len(self.ip_to_dpid_port[in_dpid])
+
+    """
+    Return a list of ip addresses  connected to the dpid
+    """
+    def get_ip_addresses_connected_to_dpid(self,in_dpid):
+        return self.ip_to_dpid_port[in_dpid].values()
+
+    """
+    Checks if the ip address in_ip is connected to any switch. If it is it return the dpid of that switch.
+    Otherwise it returns -1.
+    Something to now for later: Not sure if I should also if the mac matches.
+    """
+    def get_dpid_for_ip(self, ip):
+        for temp_dpid in self.ip_to_dpid_port.keys():
+            if ip in self.ip_to_dpid_port[temp_dpid].values():
+                return temp_dpid
+        return -1
+    """
+    Checks if an dpid is in self.ip_to_dpid_port
+    """
+    def check_dpid_in_cache(self, in_dpid):
+        if in_dpid in self.ip_to_dpid_port.keys():
+            return True
+        else:
+            return False
+
 """
 This class holds the list of links and switches in the topology and it provides some useful functions
 """
@@ -273,27 +315,7 @@ class TopoStructure():
 
         # Record where each host is connected to.
         # For example {1: {'10.0.0.1': 2}} means 10.0.0.1 is connected to dpid 1 using port 2
-        self.ip_to_dpid_port = {}
-
-    """
-    Checks if the ip address in_ip is connected to any switch. If it is it return the dpid of that switch.
-    Otherwise it returns -1.
-    Something to now for later: Not sure if I should also if the mac matches.
-    """
-    def get_dpid_for_ip(self, ip):
-        for temp_dpid in self.ip_to_dpid_port.keys():
-            if ip in self.ip_to_dpid_port[temp_dpid].values():
-                return temp_dpid
-        return -1
-
-    """
-    Checks if an dpid is in self.ip_to_dpid_port
-    """
-    def check_dpid_in_cache(self, in_dpid):
-        if in_dpid in self.ip_to_dpid_port.keys():
-            return True
-        else:
-            return False
+        self.ip_cache = host_cache()
 
     """
     Adds a flow to switch with given datapath. The flow has the given priority. For a given match the flow perform the
@@ -348,6 +370,13 @@ class TopoStructure():
             match = ofproto_v1_3_parser.OFPMatch()
             actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
             self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoints), 1, match, actions)
+
+    """
+    Gets list of back up link and then based on them it sends flows to the switch.
+    Note that it takes care of nodes in the middle very well.
+    """
+    def send_flows_for_path(self,src_ip ,dst_ip ,in_path):
+        self.send_midpoint_flows_for_path(in_path=in_path)
 
     """
     Gets list of link and then based on them it sends flows only to the switches in the midpoints.
@@ -730,6 +759,4 @@ class TopoStructure():
                 return l
         return None
 
-    ########## Functions related to Spanning Tree Algorithm ##########
-    def find_root_switch(self):
-        pass
+
