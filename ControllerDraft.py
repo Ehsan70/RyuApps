@@ -157,14 +157,13 @@ class SimpleSwitch13(app_manager.RyuApp):
 
             # Based on the ip of the destination the dpid of the switch connected to host ip
             dst_dpid_for_ip = self.topo_shape.ip_cache.get_dpid_for_ip(ip=d_ip)
+            print ("found {0} ip connected to dpid {1}".format(d_ip, dst_dpid_for_ip))
             if dst_dpid_for_ip != -1:
                 temp_dpid_path = self.topo_shape.find_path(s=dpid, d=dst_dpid_for_ip, s_p_n=shortest_path_node)
                 temp_link_path = self.topo_shape.convert_dpid_path_to_links(dpid_list=temp_dpid_path)
                 reverted_temp_link_path = self.topo_shape.revert_link_list(link_list=temp_link_path)
-                self.topo_shape.send_midpoint_flows_for_path(temp_link_path)
-                self.topo_shape.send_midpoint_flows_for_path(reverted_temp_link_path)
-                self.topo_shape.send_endpoint_flows_for_path(temp_link_path)
-                self.topo_shape.send_endpoint_flows_for_path(reverted_temp_link_path)
+                self.topo_shape.create_intent(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path)
+                self.topo_shape.create_intent(src_ip=s_ip, dst_ip=d_ip, in_link_path=reverted_temp_link_path)
 
         # This prints list of hw addresses of the port for given dpid
         #print(str(self.topo_shape.get_hw_addresses_for_dpid(in_dpid=dpid)))
@@ -285,8 +284,8 @@ class HostCache(object):
     If it is connected it will return the port num of switch which the host is connected to.
     If there no host with that ip connected it will return -1
     """
-    def get_port_no_connected_to_sw(self, in_dpid, in_ip):
-        if self.ip_to_dpid_port[in_dpid][in_dpid].values() == 0:
+    def get_port_num_connected_to_sw(self, in_dpid, in_ip):
+        if len(self.ip_to_dpid_port[in_dpid][in_ip].keys()) == 0:
             return -1
         else:
             return self.ip_to_dpid_port[in_dpid][in_ip]["sw_port_no"]
@@ -310,7 +309,7 @@ class HostCache(object):
     """
     def get_dpid_for_ip(self, ip):
         for temp_dpid in self.ip_to_dpid_port.keys():
-            if ip in self.ip_to_dpid_port[temp_dpid].values():
+            if ip in self.ip_to_dpid_port[temp_dpid].keys():
                 return temp_dpid
         return -1
     """
@@ -407,9 +406,11 @@ class TopoStructure(object):
                 visited_dpids.append(temp_dpid)
                 match = ofproto_v1_3_parser.OFPMatch(in_port=ports[0])
                 actions = [ofproto_v1_3_parser.OFPActionOutput(port=ports[1])]
+                print("Adding flow to {0} dpid. Match.in_port: {1} Actions.port: {2}".format(temp_dpid, ports[0], ports[1]))
                 self.add_flow(self.get_dp_switch_with_id(temp_dpid), 1, match, actions)
                 match = ofproto_v1_3_parser.OFPMatch(in_port=ports[1])
                 actions = [ofproto_v1_3_parser.OFPActionOutput(port=ports[0])]
+                print("Adding flow to {0} dpid. Match.in_port: {1} Actions.port: {2}".format(temp_dpid, ports[1], ports[0]))
                 self.add_flow(self.get_dp_switch_with_id(temp_dpid), 1, match, actions)
             elif len(ports) > 2:
                 visited_dpids.append(temp_dpid)
@@ -420,21 +421,26 @@ class TopoStructure(object):
             print("There is something wrong. There is two endpoints for a link")
         src_host_connected_dpid = self.ip_cache.get_dpid_for_ip(src_ip)
         dst_host_connected_dpid = self.ip_cache.get_dpid_for_ip(dst_ip)
-        src_host_port_on_sw = self.ip_cache.get_port_no_connected_to_sw(in_dpid=src_host_connected_dpid, in_ip=src_ip)
-        dst_host_port_on_sw = self.ip_cache.get_port_no_connected_to_sw(in_dpid=dst_host_connected_dpid, in_ip=dst_ip)
+        src_host_port_on_sw = self.ip_cache.get_port_num_connected_to_sw(in_dpid=src_host_connected_dpid, in_ip=src_ip)
+        dst_host_port_on_sw = self.ip_cache.get_port_num_connected_to_sw(in_dpid=dst_host_connected_dpid, in_ip=dst_ip)
 
+        other_port = self.find_ports_for_dpid(src_host_connected_dpid, in_link_path)
+        match = ofproto_v1_3_parser.OFPMatch(in_port=src_host_port_on_sw)
+        actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
+        print("End: Adding flow to {0} dpid. Match.in_port: {1} Actions.port: {2}".format(src_host_connected_dpid, "nothig", other_port[0]))
+        self.add_flow(self.get_dp_switch_with_id(src_host_connected_dpid), 1, match, actions)
+        match = ofproto_v1_3_parser.OFPMatch()
+        actions = [ofproto_v1_3_parser.OFPActionOutput(port=src_host_port_on_sw)]
+        print("End: Adding flow to {0} dpid. Match.in_port: {1} Actions.port: {2}".format(src_host_connected_dpid, "nothig", src_host_port_on_sw))
+        self.add_flow(self.get_dp_switch_with_id(src_host_connected_dpid), 1, match, actions)
 
-        # Todo:  Continure from here.
-        for temp_dpid_endpoint in end_points:
-            # List of port_no in a list of links (in_link_path) with dpid
-
-            other_port = self.find_ports_for_dpid(temp_dpid_endpoint, in_link_path)
-            match = ofproto_v1_3_parser.OFPMatch(in_port=1)
-            actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
-            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoint), 1, match, actions)
-            match = ofproto_v1_3_parser.OFPMatch()
-            actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
-            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoint), 1, match, actions)
+        other_port = self.find_ports_for_dpid(dst_host_connected_dpid, in_link_path)
+        match = ofproto_v1_3_parser.OFPMatch(in_port=dst_host_port_on_sw)
+        actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
+        self.add_flow(self.get_dp_switch_with_id(dst_host_connected_dpid), 1, match, actions)
+        match = ofproto_v1_3_parser.OFPMatch()
+        actions = [ofproto_v1_3_parser.OFPActionOutput(port=dst_host_port_on_sw)]
+        self.add_flow(self.get_dp_switch_with_id(dst_host_connected_dpid), 1, match, actions)
 
     """
     Gets list of link and then based on them it sends flows only to the switches in the midpoints.
