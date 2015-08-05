@@ -162,8 +162,8 @@ class SimpleSwitch13(app_manager.RyuApp):
                 temp_dpid_path = self.topo_shape.find_path(s=dpid, d=dst_dpid_for_ip, s_p_n=shortest_path_node)
                 temp_link_path = self.topo_shape.convert_dpid_path_to_links(dpid_list=temp_dpid_path)
                 reverted_temp_link_path = self.topo_shape.revert_link_list(link_list=temp_link_path)
-                self.topo_shape.create_intent(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path)
-                self.topo_shape.create_intent(src_ip=s_ip, dst_ip=d_ip, in_link_path=reverted_temp_link_path)
+                self.topo_shape.make_path_between_hosts_in_linklist(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path)
+                self.topo_shape.make_path_between_hosts_in_linklist(src_ip=s_ip, dst_ip=d_ip, in_link_path=reverted_temp_link_path)
 
         # This prints list of hw addresses of the port for given dpid
         #print(str(self.topo_shape.get_hw_addresses_for_dpid(in_dpid=dpid)))
@@ -381,7 +381,6 @@ class TopoStructure(object):
             print("There is something wrong. There is two endpoints for a link")
 
         for temp_dpid_endpoint in end_points:
-            # List of port_no in a list of links (in_link_path) with dpid
             other_port = self.find_ports_for_dpid(temp_dpid_endpoint, in_link_path)
             match = ofproto_v1_3_parser.OFPMatch(in_port=1)
             actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
@@ -395,18 +394,27 @@ class TopoStructure(object):
     Note that it takes care of nodes in the middle very well.
     intent: Based on onos definition intent is a set of flows send to switches in order
     create a path between two endpoints which is this case it's src_ip and dst_ip.
+    :type src_ip: str
+    :param src_ip: Ip address of the destination host
+    :type dst_ip: str
+    :param dst_ip: Ip address of the source host
+    :type in_link_path: list of link objects. Links are only between switches; i.e. no link between switches and
+        hosts are recorded in this list.
     """
-    def create_intent(self, src_ip, dst_ip, in_link_path):
+    def make_path_between_hosts_in_linklist(self, src_ip, dst_ip, in_link_path):
         # send flows to the switches in the middle of path
         u_dpids = self.find_unique_dpid_inlinklist(in_link_path)
         visited_dpids = []
         for temp_dpid in u_dpids:
+            # The variable ports is a list of ports for switch with dpid equal to temp_dpid which the ports
+            # are used in the list of links `in_link_path`
             ports = self.find_ports_for_dpid(temp_dpid, in_link_path)
             if len(ports) == 2:
                 visited_dpids.append(temp_dpid)
                 match = ofproto_v1_3_parser.OFPMatch(in_port=ports[0])
                 actions = [ofproto_v1_3_parser.OFPActionOutput(port=ports[1])]
                 print("Adding flow to {0} dpid. Match.in_port: {1} Actions.port: {2}".format(temp_dpid, ports[0], ports[1]))
+                # Gets datapath object of the switch with dpid equal to temp_dpid
                 self.add_flow(self.get_dp_switch_with_id(temp_dpid), 1, match, actions)
                 match = ofproto_v1_3_parser.OFPMatch(in_port=ports[1])
                 actions = [ofproto_v1_3_parser.OFPActionOutput(port=ports[0])]
@@ -419,21 +427,37 @@ class TopoStructure(object):
         end_points = [x for x in u_dpids if x not in visited_dpids]
         if len(end_points) > 2:
             print("There is something wrong. There is two endpoints for a link")
+        # Finds dpid of the switch connected to host with ip address of src_ip
         src_host_connected_dpid = self.ip_cache.get_dpid_for_ip(src_ip)
+        # Finds dpid of the switch connected to host with ip address of dst_ip
         dst_host_connected_dpid = self.ip_cache.get_dpid_for_ip(dst_ip)
+        # Find the port on which host with ip address src_ip is connected to switch with dpid src_host_connected_dpid.
         src_host_port_on_sw = self.ip_cache.get_port_num_connected_to_sw(in_dpid=src_host_connected_dpid, in_ip=src_ip)
+        # Find the port on which host with ip address dst_ip is connected to switch with dpid dst_host_connected_dpid.
         dst_host_port_on_sw = self.ip_cache.get_port_num_connected_to_sw(in_dpid=dst_host_connected_dpid, in_ip=dst_ip)
 
+        # List of port_no in a list of links (in_link_path) with dpid temp_dpid_endpoint.
+        # This must be one for the switches in the endpoints and 2 for midpoint switches
         other_port = self.find_ports_for_dpid(src_host_connected_dpid, in_link_path)
+        # For packets coming from host to the switch.
+        # src_host_port_on_sw is the port of the switch which is connected to host.
         match = ofproto_v1_3_parser.OFPMatch(in_port=src_host_port_on_sw)
+        # when packets are coming from host, output port is the other port which is in the list of links
         actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
-        print("End: Adding flow to {0} dpid. Match.in_port: {1} Actions.port: {2}".format(src_host_connected_dpid, "nothig", other_port[0]))
+        print("End: Adding flow to {0} dpid. Match.in_port: {1} Actions.port: {2}".format(
+            src_host_connected_dpid, "nothig", other_port[0]))
         self.add_flow(self.get_dp_switch_with_id(src_host_connected_dpid), 1, match, actions)
+        # This is for the packets that are going towards the host.
+        # The below two lines say send all messages to the host port. This is need to be changed so that packets with
+        # ethernet destination addresses equal to host mac addresses are sent to the host
         match = ofproto_v1_3_parser.OFPMatch()
         actions = [ofproto_v1_3_parser.OFPActionOutput(port=src_host_port_on_sw)]
-        print("End: Adding flow to {0} dpid. Match.in_port: {1} Actions.port: {2}".format(src_host_connected_dpid, "nothig", src_host_port_on_sw))
+        print("End: Adding flow to {0} dpid. Match.in_port: {1} Actions.port: {2}".format(
+            src_host_connected_dpid, "nothig", src_host_port_on_sw))
+        # send the flow to the endpoint dpid.
         self.add_flow(self.get_dp_switch_with_id(src_host_connected_dpid), 1, match, actions)
 
+        # Below are the same as above but for the other endpoint
         other_port = self.find_ports_for_dpid(dst_host_connected_dpid, in_link_path)
         match = ofproto_v1_3_parser.OFPMatch(in_port=dst_host_port_on_sw)
         actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
@@ -664,6 +688,8 @@ class TopoStructure(object):
     Returns list of port_no in a list of link with dpid.
     Note that the link_list has only one path going through switch with given dpid. So there should be
     no more than two port in the list.
+    Note that endpoint must have one port in this list of links. The links between hosts and switches is
+    not included in this path (list of links)
     """
     def find_ports_for_dpid(self, dpid, link_list):
         port_ids = []
