@@ -164,7 +164,6 @@ class SimpleSwitch13(app_manager.RyuApp):
                 reverted_temp_link_path = self.topo_shape.revert_link_list(link_list=temp_link_path)
                 self.topo_shape.make_path_between_hosts_in_linklist(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path)
                 self.topo_shape.make_path_between_hosts_in_linklist(src_ip=s_ip, dst_ip=d_ip, in_link_path=reverted_temp_link_path)
-
         # This prints list of hw addresses of the port for given dpid
         #print(str(self.topo_shape.get_hw_addresses_for_dpid(in_dpid=dpid)))
 
@@ -389,19 +388,20 @@ class TopoStructure(object):
             actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
             self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoint), 1, match, actions)
 
-    """
-    Gets list of back up link and then based on them it sends flows to the switch.
-    Note that it takes care of nodes in the middle very well.
-    intent: Based on onos definition intent is a set of flows send to switches in order
-    create a path between two endpoints which is this case it's src_ip and dst_ip.
-    :type src_ip: str
-    :param src_ip: Ip address of the destination host
-    :type dst_ip: str
-    :param dst_ip: Ip address of the source host
-    :type in_link_path: list of link objects. Links are only between switches; i.e. no link between switches and
-        hosts are recorded in this list.
-    """
     def make_path_between_hosts_in_linklist(self, src_ip, dst_ip, in_link_path):
+        """
+        Gets list of back up link and then based on them it sends flows to the switch.
+        Note that it takes care of nodes in the middle very well.
+        intent: Based on onos definition intent is a set of flows send to switches in order
+        create a path between two endpoints which is this case it's src_ip and dst_ip.
+
+        :type src_ip: str
+        :param src_ip: Ip address of the destination host
+        :type dst_ip: str
+        :param dst_ip: Ip address of the source host
+        :type in_link_path: list
+        :param in_link_path: A list of link objects. Links are only between switches; i.e. no link between switches and hosts are recorded in this list.
+        """
         # send flows to the switches in the middle of path
         u_dpids = self.find_unique_dpid_inlinklist(in_link_path)
         visited_dpids = []
@@ -466,12 +466,14 @@ class TopoStructure(object):
         actions = [ofproto_v1_3_parser.OFPActionOutput(port=dst_host_port_on_sw)]
         self.add_flow(self.get_dp_switch_with_id(dst_host_connected_dpid), 1, match, actions)
 
-    """
-    Gets list of link and then based on them it sends flows only to the switches in the midpoints.
-    That is the switch in the middle of path not at the endpoints
-    Note that it only takes care of nodes in the middle very well.
-    """
     def send_midpoint_flows_for_path(self, in_path):
+        """
+        Gets list of link and then based on them it sends flows only to the switches in the midpoints.
+        That is the switch in the middle of path not at the endpoints
+        Note that it only takes care of nodes in the middle very well.
+        :type in_path: list
+        :param in_path: list of link objects which collectively is called a path.
+        """
         u_dpids = self.find_unique_dpid_inlinklist(in_path)
         for temp_dpid in u_dpids:
             ports = self.find_ports_for_dpid(temp_dpid, in_path)
@@ -485,43 +487,20 @@ class TopoStructure(object):
             elif len(ports) > 2:
                 print("Need to be implemented.")
 
-    """
-    Gets list of link and then based on them it sends flows only to the switches in the endpoints.
-    Taking care of end points is a bit tricky.
-    """
-    # Todo: Need to fix this so that it used the learned port of the hosts
-    def send_endpoint_flows_for_path(self, in_path):
-        u_dpids = self.find_unique_dpid_inlinklist(in_path)
-        visited_dpids = []
-        for temp_dpid in u_dpids:
-            ports = self.find_ports_for_dpid(temp_dpid, in_path)
-            if len(ports) == 2:
-                visited_dpids.append(temp_dpid)
-            elif len(ports) > 2:
-                visited_dpids.append(temp_dpid)
-
-        end_points = [x for x in u_dpids if x not in visited_dpids]
-        print ("end_points: "+str(end_points))
-        if len(end_points) > 2:
-            print("There is something wrong. There is two endpoints for a link")
-
-        for temp_dpid_endpoints in end_points:
-            other_port = self.find_ports_for_dpid(temp_dpid_endpoints, in_path)
-            match = ofproto_v1_3_parser.OFPMatch(in_port=1)
-            actions = [ofproto_v1_3_parser.OFPActionOutput(port=other_port[0])]
-            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoints), 1, match, actions)
-            match = ofproto_v1_3_parser.OFPMatch(in_port=other_port[0])
-            actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
-            self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoints), 1, match, actions)
-
-    """
-    Based on shortest_path_node, the functions finds a backup path for the link object Link.
-    Return a list of dpids that the msg has to go though in order to reach destination
-    """
     def find_backup_path(self, link, shortest_path_node):
+        """
+        Based on shortest_path_node, the functions finds a backup path for the link object Link.
+        Return a list of dpids that the msg has to go though in order to reach destination.
+
+        :type link: Link Object
+        :param link: This would be the link that have been failed.
+        :type shortest_path_node: dict
+        :param shortest_path_node: A dictionary which contains the last node in the shortest path where each destination is reached from.
+        """
         s = link.src.dpid
         d = link.dst.dpid
-        if d==s:
+        if d == s:
+            # If destination address and source address is same there is something wrong.
             print("Link Error")
         # The bk_path is a list of DPIDs that the path must go through to reach d from s
         bk_path = []
@@ -533,12 +512,18 @@ class TopoStructure(object):
 
         return bk_path
 
-    """
-    Based on shortest_path_node (s_p_n), the functions finds a shorted path between source s and destination d.
-    Where d and s are dpid.
-    Return a list of dpids that the msg has to go though in order to reach destination
-    """
     def find_path(self, s, d, s_p_n):
+        """
+        Based on shortest_path_node (s_p_n), the functions finds a shorted path between source s and destination d.
+        Where d and s are dpid.
+        :param s: dpid of the source
+        :type s: int
+        :param d: dpid of the destination
+        :type d: int
+        :param s_p_n: is the out put of the shortest path funtion; i.e. shortest_path_node
+        :type s_p_n: dict
+        :return: a list of dpids that the msg has to go though in order to reach destination
+        """
         if d == s:
             print("Link Error")
         # The found_path is a list of DPIDs that the path must go through to reach d from s
@@ -552,10 +537,13 @@ class TopoStructure(object):
 
         return found_path
 
-    """
-    This reverts the link object in the link list.
-    """
     def revert_link_list(self, link_list):
+        """
+        This reverts the link object in the link list.
+        :rtype : list
+        :param link_list: List of link objects
+        :return: Returns a list where each link is the reversed of the the original one.
+        """
         reverted_list = []
         for l in link_list:
             for ll in self.topo_raw_links:
@@ -563,10 +551,12 @@ class TopoStructure(object):
                     reverted_list.append(ll)
         return reverted_list
 
-    """
-    This converts the list of dpids returned from find_backup_path() to a list of link objects.
-    """
     def convert_dpid_path_to_links(self, dpid_list):
+        """
+        This converts the list of dpids returned from find_backup_path() to a list of link objects.
+        :param dpid_list:
+        :rtype : object
+        """
         dpid_list = list(reversed(dpid_list))
         backup_links = []
         for i, v in enumerate(dpid_list):
@@ -579,18 +569,28 @@ class TopoStructure(object):
         return backup_links
 
     def print_links(self, func_str=None):
-        # Convert the raw link to list so that it is printed easily
+        """
+        Uses the built in __str__ function to print the links saved in the class `topo_raw_links`.
+        :param func_str: A string which will be printed to help user locate the its prints
+        """
         print(" \t" + str(func_str) + ": Current Links:")
         for l in self.topo_raw_links:
             print (" \t\t" + str(l))
 
     def print_input_links(self, list_links):
-        # Convert the raw link to list so that it is printed easily
+        """
+        Uses the built in __str__ function to print the links.
+        :param list_links: LIst of link objects.
+        """
         print(" \t Given Links:")
         for l in list_links:
             print (" \t\t" + str(l))
 
     def print_switches(self, func_str=None):
+        """
+        Uses the built in __str__ function to print the links saved in the class `topo_raw_switches`.
+        :param func_str: A string which will be printed to help user locate the its prints
+        """
         print(" \t" + str(func_str) + ": Current Switches:")
         for s in self.topo_raw_switches:
             print (" \t\t" + str(s))
