@@ -266,55 +266,66 @@ class HostCache(object):
     def __init__(self):
         self.ip_to_dpid_port = {}
 
-    def get_port_ip_on_dpid(self, in_ip, in_dpid):
-        pass
-        #self.ip_to_dpid_port[]
-
-    """
-    Here is example of **in_dict : {"connected_host_mac":s_mac, "sw_port_no":in_port,
-    "sw_port_mac":self.topo_shape.get_hw_address_for_port_of_dpid(in_dpid=dpid, in_port_no=in_port)}
-    """
     def add_dpid_host(self,in_dpid, in_host_ip, **in_dict):
+        """
+        Here is example of **in_dict : {"connected_host_mac":s_mac, "sw_port_no":in_port,
+        "sw_port_mac":self.topo_shape.get_hw_address_for_port_of_dpid(in_dpid=dpid, in_port_no=in_port)}
+        :param in_dpid:
+        :param in_host_ip:
+        :param in_dict:
+        """
         self.ip_to_dpid_port.setdefault(in_dpid, {})
         self.ip_to_dpid_port[in_dpid][in_host_ip]=in_dict
 
-    """
-    Check if host with ip address in_ip is connected to in_dpid switch.
-    If it is connected it will return the port num of switch which the host is connected to.
-    If there no host with that ip connected it will return -1
-    """
     def get_port_num_connected_to_sw(self, in_dpid, in_ip):
+        """
+        Check if host with ip address in_ip is connected to in_dpid switch.
+        If it is connected it will return the port num of switch which the host is connected to.
+        If there no host with that ip connected it will return -1
+        :param in_dpid: Datapath id of the switch
+        :param in_ip: Ip address connected to switch with datapath id equal to in_dpid
+        :rtype : int
+        """
         if len(self.ip_to_dpid_port[in_dpid][in_ip].keys()) == 0:
             return -1
         else:
             return self.ip_to_dpid_port[in_dpid][in_ip]["sw_port_no"]
 
-    """
-    Returns number of hosts connected to the switch with given in_dpid
-    """
     def get_number_of_hosts_connected_to_dpid(self, in_dpid):
+        """
+        Returns number of hosts connected to the switch with given in_dpid
+        :param in_dpid: Datapath id of a switch
+        :rtype : int
+        """
         return len(self.ip_to_dpid_port[in_dpid])
 
-    """
-    Return a list of ip addresses  connected to the dpid
-    """
-    def get_ip_addresses_connected_to_dpid(self,in_dpid):
+    def get_ip_addresses_connected_to_dpid(self, in_dpid):
+        """
+        Return a list of ip addresses  connected to the dpid of switch.
+        :param in_dpid: Datapath id
+        :rtype : list
+        """
         return self.ip_to_dpid_port[in_dpid].values()
 
-    """
-    Checks if the ip address in_ip is connected to any switch. If it is it return the dpid of that switch.
-    Otherwise it returns -1.
-    Something to now for later: Not sure if I should also if the mac matches.
-    """
     def get_dpid_for_ip(self, ip):
+        """
+        Checks if the ip address in_ip is connected to any switch. If it is, it return the dpid of that switch.
+        Otherwise it returns -1.
+        Something to know for later: Not sure if I should also if the mac matches.
+        :param ip: Ip address of host
+        :rtype : int
+        """
         for temp_dpid in self.ip_to_dpid_port.keys():
             if ip in self.ip_to_dpid_port[temp_dpid].keys():
                 return temp_dpid
         return -1
-    """
-    Checks if an dpid is in self.ip_to_dpid_port
-    """
+
     def check_dpid_in_cache(self, in_dpid):
+        """
+        Checks if an dpid is in self.ip_to_dpid_port
+        :param in_dpid: Datapath id
+        :rtype : bool
+        """
         if in_dpid in self.ip_to_dpid_port.keys():
             return True
         else:
@@ -334,11 +345,16 @@ class TopoStructure(object):
         # Record where each host is connected to.
         self.ip_cache = HostCache()
 
-    """
-    Adds a flow to switch with given datapath. The flow has the given priority. For a given match the flow perform the
-    specified given actions.
-    """
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
+        """
+        Adds a flow to switch with given datapath. The flow has the given priority. For a given match the flow perform the
+        specified given actions.
+        :param datapath: Datapath object of a switch
+        :param priority: priority of the flow which is going to be installed.
+        :param match: A match object for that flow
+        :param actions: A list of OFPActionOutput objects for the flow.
+        :param buffer_id: Some switches support buffer id
+        """
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
@@ -353,12 +369,13 @@ class TopoStructure(object):
                                     match=match, instructions=inst)
         datapath.send_msg(mod)
 
-    """
-    Gets list of back up link and then based on them it sends flows to the switch.
-    Note that it takes care of nodes in the middle very well. But for the endpoints, it assumes that the
-    host is connected to port 1.
-    """
     def send_flows_for_path(self, in_link_path):
+        """
+        Gets list of back up link and then based on them it sends flows to the switch.
+        Note that it takes care of nodes in the middle very well. But for the endpoints, it assumes that the
+        host is connected to port 1.
+        :param in_link_path: List of link objects (a path)
+        """
         u_dpids = self.find_unique_dpid_inlinklist(in_link_path)
         visited_dpids = []
         for temp_dpid in u_dpids:
@@ -598,10 +615,12 @@ class TopoStructure(object):
             for p in s.ports:
                 print ("\t\t\t " + str(p.hw_addr))
 
-    """
-    For a specific dpid of switch it return a list of mac addresses for each port of that sw.
-    """
     def get_hw_addresses_for_dpid(self, in_dpid):
+        """
+        For a specific dpid of switch it return a list of mac addresses for each port of that sw.
+        :param in_dpid: Datapath id of the switch.
+        :rtype : list
+        """
         list_of_HW_addr = []
         for s in self.topo_raw_switches:
             if s.dp.id == in_dpid:
@@ -609,11 +628,13 @@ class TopoStructure(object):
                     list_of_HW_addr.append(p.hw_addr)
         return list_of_HW_addr
 
-    """
-    For a specific dpid of switch it return a list of mac addresses for each port of that sw.
-    If it could find hw address for the port it will return the addr otherwise it will return -1.
-    """
     def get_hw_address_for_port_of_dpid(self, in_dpid, in_port_no):
+        """
+        For given port on the given dpid it will return hw address of that port otherwise it will return -1.
+        :param in_dpid: Datapath id of the switch
+        :param in_port_no: A port number on the switch
+        :rtype : int or str
+        """
         for s in self.topo_raw_switches:
             # here s is a switch object
             if s.dp.id == in_dpid:
@@ -623,75 +644,79 @@ class TopoStructure(object):
                         return p.hw_addr
         return -1
 
-    """
-    Returns a list of dpids of switches.
-    The switches are learned when they are joined.
-    """
     def get_switches_dpid(self):
+        """
+        Returns a list of switch dpids.
+        The switches are learned when they are joined using dpid.
+        :rtype : list
+        """
         sw_dpids = []
         for s in self.topo_raw_switches:
             sw_dpids.append(s.dp.id)
         return sw_dpids
 
-    """
-    Returns a list of string dpids of switches.
-    """
     def get_switches_str_dpid(self):
+        """
+        Returns a list of string dpids of switches.
+        :rtype : list
+        """
         sw_dpids = []
         for s in self.topo_raw_switches:
             sw_dpids.append(dpid_lib.dpid_to_str(s.dp.id))
         return sw_dpids
 
-    """
-    Returns a datapath with id set to dpid
-    """
-    def get_dp_switch_with_id(self,dpid):
+    def get_dp_switch_with_id(self, dpid):
+        """
+        Returns a datapath object with id set to dpid
+        :param dpid: Datapath id of the switch
+        :rtype : object
+        """
         for s in self.topo_raw_switches:
             if s.dp.id == dpid:
                 return s.dp
         return None
 
-    """
-    Returns the number of current learned switches
-    """
     def switches_count(self):
+        """
+        Returns the number of current learned switches
+        :rtype : int
+        """
         return len(self.topo_raw_switches)
 
-    def convert_raw_links_to_list(self):
-        # Build a  list with all the links [((srcNode,port), (dstNode, port))].
-        # The list is easier for printing.
-        self.topo_links = [((link.src.dpid, link.src.port_no),
-                            (link.dst.dpid, link.dst.port_no))
-                           for link in self.topo_raw_links]
-
-    def convert_raw_switch_to_list(self):
-        # Build a list with all the switches ([switches])
-        self.topo_switches = [(switch.dp.id, UP) for switch in self.topo_raw_switches]
-
-    """
-    Adds the link to list of raw links
-    """
     def bring_up_link(self, link):
+        """
+        Adds the link to list of raw links
+        :rtype : Link
+        """
         self.topo_raw_links.append(link)
 
-    """
-    Check if a link with specific two endpoints exists.
-    """
     def check_link(self, sdpid, sport, ddpid, dport):
+        """
+        Checks if a link with source dpid of sdpid and source port number of sport is connected to a destination with
+        dpid of ddpid and port number of dport.
+        :param sdpid: Source datapath id of the switch
+        :param sport: Source port number
+        :param ddpid: Destination datapath id of the switch
+        :param dport: Destination port number
+        :rtype : bool
+        """
         for i, link in self.topo_raw_links:
             if ((sdpid, sport), (ddpid, dport)) == (
                     (link.src.dpid, link.src.port_no), (link.dst.dpid, link.dst.port_no)):
                 return True
         return False
 
-    """
-    Returns list of port_no in a list of link with dpid.
-    Note that the link_list has only one path going through switch with given dpid. So there should be
-    no more than two port in the list.
-    Note that endpoint must have one port in this list of links. The links between hosts and switches is
-    not included in this path (list of links)
-    """
     def find_ports_for_dpid(self, dpid, link_list):
+        """
+        Returns list of port_no of dpid which is used in a list of link objects.
+        Note that the link_list has only one path going through switch with given dpid. So there should be
+        no more than two port in the list.
+        Note that endpoint must have one port in this list of links. The links between hosts and switches is
+        not included in this path (list of links)
+        :param dpid: Datapath id of a switch
+        :param link_list: List of link objects which combined are called path
+        :rtype : list
+        """
         port_ids = []
         for l in link_list:
             if l.src.dpid == dpid:
@@ -700,10 +725,13 @@ class TopoStructure(object):
                 port_ids.append(l.dst.port_no)
         return port_ids
 
-    """
-    Returns list of unique dpids in a list of links
-    """
-    def find_unique_dpid_inlinklist(self,link_list):
+    def find_unique_dpid_inlinklist(self, link_list):
+        """
+        Returns list of unique dpids in a list of links. i.e. any dpid that participated in the path.
+        :param link_list: List of Link objects
+        :type link_list: list
+        :rtype : List
+        """
         dp_ids = []
         for l in link_list:
             if l.dst.dpid not in dp_ids:
@@ -712,11 +740,13 @@ class TopoStructure(object):
                 dp_ids.append(dp_ids.append(dp_ids))
         return dp_ids
 
-    """
-    Finds the shortest path from source s to all other nodes.
-    Both s and d are switches.
-    """
     def find_shortest_path(self, s):
+        """
+        Finds the shortest path from source s to all other nodes.
+        :param s: Source Dpid
+        :rtype : shortest_path_hubs -> Number of hubs it takes for each destination to reach from source with dpid s.
+                 shortest_path_node -> The dpid of last node which a packet must pass in order to reach the destination.
+        """
         # I really recommend watching this video: https://www.youtube.com/watch?v=zXfDYaahsNA
         s_count = self.switches_count()
         s_temp = s
@@ -776,10 +806,14 @@ class TopoStructure(object):
             if verbose == 1: print "visited out: " + str(visited) + "\n"
         return shortest_path_hubs, shortest_path_node
 
-    """
-    Find a path between src and dst based on the shorted path info which is stored on shortest_path_node
-    """
     def find_path_from_topo(self,src_dpid, dst_dpid, shortest_path_node):
+        """
+        Find a path between src and dst based on the shorted path info which is stored on shortest_path_node
+        :param src_dpid: Source datapath id
+        :param dst_dpid: Destination datapath id
+        :param shortest_path_node: This is result of the shortest_path function with source dpid as input
+        :rtype : list
+        """
         path = []
         now_node = dst_dpid
         last_node = None
@@ -795,57 +829,75 @@ class TopoStructure(object):
             else:
                 print "Path could not be found"
         return path
-    """
-    Finds the dpids of destinations where the links' source is s_dpid
-    """
+
     def find_dst_with_src(self, s_dpid):
+        """
+        Finds the dpids of destinations in the currently learned links where the links' source is s_dpid
+        :param s_dpid: Source datapath id
+        :rtype : list
+        """
         d = []
         for l in self.topo_raw_links:
             if l.src.dpid == s_dpid:
                 d.append(l.dst.dpid)
         return d
 
-    """
-    Finds the list of link objects where links' src dpid is s_dpid
-    """
     def find_links_with_src(self, s_dpid):
+        """
+        Finds the list of link objects where links' src dpid is s_dpid
+        :param s_dpid: Source datapath id
+        :rtype : list
+        """
         d_links = []
         for l in self.topo_raw_links:
             if l.src.dpid == s_dpid:
                 d_links.append(l)
         return d_links
 
-    """
-    Returns a link object that has in_dpid and in_port as either source or destination dpid and port.
-    """
     def link_with_src_dst_port(self, in_port, in_dpid):
+        """
+        Returns a link object that has in_dpid and in_port as either source or destination dpid and port number.
+        :param in_port: Port number
+        :param in_dpid: Datapath id of the switch
+        :rtype : Link or None
+        """
         for l in self.topo_raw_links:
             if (l.src.dpid == in_dpid and l.src.port_no == in_port) or (
                             l.dst.dpid == in_dpid and l.src.port_no == in_port):
                 return l
         return None
-    """
-    Returns a link object from src with dpid s to dest with dpid d.
-    """
-    def link_from_src_to_dst(self, s, d):
+
+    def link_from_src_to_dst(self, s_dpid, d_dpid):
+        """
+        Returns a link object which its source has dpid equal to s_dpid and its destination has dpid equal to d_dpid.
+        :param s_dpid: Source dpid
+        :param d_dpid: Destination dpid
+        :rtype : Link or None
+        """
         for l in self.topo_raw_links:
-            if l.src.dpid == s and l.dst.dpid == d:
+            if l.src.dpid == s_dpid and l.dst.dpid == d_dpid:
                 return l
         return None
 
-    """
-    Returns a link object that has in_dpid and in_port as source dpid and port.
-    """
     def link_with_src_and_port(self, in_port, in_dpid):
+        """
+        Returns a link object that has in_dpid and in_port as source dpid and port.
+        :param in_port: port number of the switch with dpid equal to in_dpid
+        :param in_dpid: Datapath id of the source switch
+        :rtype : Link
+        """
         for l in self.topo_raw_links:
             if (l.src.dpid == in_dpid and l.src.port_no == in_port):
                 return l
         return None
 
-    """
-    Returns a link object that has in_dpid and in_port as destination dpid and port.
-    """
     def link_with_dst_and_port(self, in_port, in_dpid):
+        """
+        Returns a link object that has in_dpid and in_port as destination dpid and port.
+        :param in_port: port number of the switch with dpid equal to in_dpid
+        :param in_dpid: Datapath id of the destination switch
+        :rtype : Link
+        """
         for l in self.topo_raw_links:
             if (l.dst.dpid == in_dpid and l.dst.port_no == in_port):
                 return l
