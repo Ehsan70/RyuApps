@@ -31,6 +31,7 @@ class Simple3PktSwitch(Topo):
         opts = dict(protocols='OpenFlow13')
 
         # Adding switches
+        # s1 = self.addSwitch('s1', dpid="0000000000000001", mac="00:00:00:00:00:11")
         s1 = self.addSwitch('s1', dpid="0000000000000001")
         s2 = self.addSwitch('s2', dpid="0000000000000002")
         s3 = self.addSwitch('s3', dpid="0000000000000003")
