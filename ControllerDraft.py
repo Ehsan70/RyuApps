@@ -27,7 +27,6 @@ from ryu.lib import dpid as dpid_lib
 from ryu.controller import dpset
 import copy
 from threading import Lock
-import time
 
 UP = 1
 DOWN = 0
@@ -404,6 +403,25 @@ class TopoStructure(object):
             match = ofproto_v1_3_parser.OFPMatch()
             actions = [ofproto_v1_3_parser.OFPActionOutput(port=1)]
             self.add_flow(self.get_dp_switch_with_id(temp_dpid_endpoint), 1, match, actions)
+
+    def create_intent(self, src_ip, dest_ip):
+        """
+        Creates a path (intent) from a host with ip address of ``src_ip`` to the destination host with
+        ip address of ``dest_id``. It does so by finding the dpids to connect the two hosts
+        intent: Based on onos definition intent is a set of flows send to switches in order
+        create a path between two endpoints which is this case it's src_ip and dst_ip.
+
+        :type src_ip: str
+        :param src_ip: Ip address of the destination host
+        :type dst_ip: str
+        :param dst_ip: Ip address of the source host
+        """
+        # Todo: Test the function
+        # Find what dpid is connected to the src and dest hosts
+        # Find a shortest path from the src_dpid to dest_dpid
+        # Add flow for the shortest path
+        # Add flow for the end points using the cache.
+        pass
 
     def make_path_between_hosts_in_linklist(self, src_ip, dst_ip, in_link_path):
         """
