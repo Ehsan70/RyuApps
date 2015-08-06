@@ -5,7 +5,6 @@ from mininet.net import Mininet
 from mininet.log import setLogLevel, info
 from mininet.node import RemoteController
 from mininet.cli import CLI
-from mininet.link import TCLink
 """
 Instructions to run the topo:
     1. Go to directory where this fil is.
