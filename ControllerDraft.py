@@ -451,15 +451,15 @@ class TopoStructure(object):
                 ports = self.find_ports_for_dpid(l.src.dpid, in_link_path)
                 # Mac address of the destination host
                 host_eth_dst_addr = self.ip_cache.get_hw_address_of_host(in_ip=dst_ip)
+                sw_port_connected_to_src_host = self.ip_cache.get_port_num_connected_to_sw(in_dpid=l.src.dpid, in_ip=src_ip)
                 # See http://ryu.readthedocs.org/en/latest/ofproto_v1_3_ref.html
-                # THese dont work Todo: fix this
-                match = ofproto_v1_3_parser.OFPMatch(eth_dst=host_eth_dst_addr)
+                match = ofproto_v1_3_parser.OFPMatch(in_port=sw_port_connected_to_src_host, eth_dst=host_eth_dst_addr)
                 actions = [ofproto_v1_3_parser.OFPActionOutput(port=ports[0])]
-                print("FF: Adding flow to {0} dpid. Match.eth_dst: {1} Actions.port: {2}".format(l.src.dpid,
-                                                                                             host_eth_dst_addr,
-                                                                                             ports[0]))
+                print("FF: Adding flow to {0} dpid. Match.in_port: {3} Match.eth_dst: {1} Actions.port: {2}".format(
+                    l.src.dpid, host_eth_dst_addr, ports[0], sw_port_connected_to_src_host))
                 # Gets datapath object of the switch with dpid equal to temp_dpid
                 self.add_flow(self.get_dp_switch_with_id(l.src.dpid), 1, match, actions)
+
             if ind == (len(in_link_path)-1):
                 # The variable ports is a list of ports for switch with dpid equal to temp_dpid which the ports
                 # are used in the list of links `in_link_path`
@@ -467,14 +467,13 @@ class TopoStructure(object):
                 # Mac address of the destination host
                 host_eth_dst_addr = self.ip_cache.get_hw_address_of_host(in_ip=dst_ip)
                 # THese dont work Todo: fix this
-                match = ofproto_v1_3_parser.OFPMatch( eth_dst=host_eth_dst_addr)
+                match = ofproto_v1_3_parser.OFPMatch(in_port=ports[0], eth_dst=host_eth_dst_addr)
                 # The port which destination host is connected to last switch
-                sw_port_connected_to_host = self.ip_cache.get_port_num_connected_to_sw(in_dpid=l.dst.dpid, in_ip=dst_ip)
-                if sw_port_connected_to_host > 0:
-                    actions = [ofproto_v1_3_parser.OFPActionOutput(port=sw_port_connected_to_host)]
-                    print("SF: Adding flow to {0} dpid. Match.eth_dst: {1} Actions.port: {2}".format(l.dst.dpid,
-                                                                                                 host_eth_dst_addr,
-                                                                                                 sw_port_connected_to_host))
+                sw_port_connected_to_dst_host = self.ip_cache.get_port_num_connected_to_sw(in_dpid=l.dst.dpid, in_ip=dst_ip)
+                if sw_port_connected_to_dst_host > 0:
+                    actions = [ofproto_v1_3_parser.OFPActionOutput(port=sw_port_connected_to_dst_host)]
+                    print("SF: Adding flow to {0} dpid. Match.in_port: {3} Match.eth_dst: {1} Actions.port: {2}".format(
+                        l.dst.dpid, host_eth_dst_addr, sw_port_connected_to_dst_host, ports[0]))
                     # Gets datapath object of the switch with dpid equal to temp_dpid
                     self.add_flow(self.get_dp_switch_with_id(l.dst.dpid), 1, match, actions)
                 else:
