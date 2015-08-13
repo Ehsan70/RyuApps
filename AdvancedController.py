@@ -478,6 +478,9 @@ class TopoStructure(object):
                     self.add_flow(self.get_dp_switch_with_id(l.dst.dpid), 1, match, actions)
                 else:
                     print("Port Number if neg")
+            else:
+                pass
+                # Add all flows at once
 
     def send_midpoint_flows_for_path(self, in_path):
         """
