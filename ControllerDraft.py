@@ -161,14 +161,13 @@ class SimpleSwitch13(app_manager.RyuApp):
                 print("temp_dpid_path: "+str(temp_dpid_path))
                 print "eth_type:  " +str(eth_type)
 
-                #self.topo_shape.make_path_between_hosts_in_linklist_for_flood(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path)
-                #self.topo_shape.make_path_between_hosts_in_linklist_for_flood(src_ip=d_ip, dst_ip=s_ip, in_link_path=reverted_temp_link_path)
+                self.topo_shape.make_path_between_hosts_in_linklist_for_flood(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path)
+                self.topo_shape.make_path_between_hosts_in_linklist_for_flood(src_ip=d_ip, dst_ip=s_ip, in_link_path=reverted_temp_link_path)
                 self.topo_shape.make_path_between_hosts_in_linklist(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path, hw_addrrr=dst_mac)
                 self.topo_shape.make_path_between_hosts_in_linklist(src_ip=d_ip, dst_ip=s_ip, in_link_path=reverted_temp_link_path, hw_addrrr=dst_mac)
 
         # This prints list of hw addresses of the port for given dpid
         #print(str(self.topo_shape.get_hw_addresses_for_dpid(in_dpid=dpid)))
-
 
     ###################################################################################
     """
@@ -325,7 +324,6 @@ class HostCache(object):
             if ip in self.ip_to_dpid_port[temp_dpid].keys():
                 return temp_dpid
         return -1
-
 
     def check_dpid_in_cache(self, in_dpid):
         """
@@ -556,7 +554,7 @@ class TopoStructure(object):
                 idle_timeout = hard_timeout = 0
                 priority = 32768
                 buffer_id = ofp.OFP_NO_BUFFER
-                match = ofp_parser.OFPMatch(in_port=sw_port_connected_to_src_host)
+                match = ofp_parser.OFPMatch(in_port=sw_port_connected_to_src_host, eth_type=806)
                 actions = [ofp_parser.OFPActionOutput(port=ports[0])]
                 print("\tFF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Actions.port: {3}".format(
                     l.src.dpid, sw_port_connected_to_src_host,host_eth_dst_addr, ports[0]))
