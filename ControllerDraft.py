@@ -6,8 +6,8 @@ from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, DEAD_DISP
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3, ofproto_v1_3_parser
 from ryu.lib.packet import packet
-from ryu.lib.packet.ethernet import ethernet
-from ryu.lib.packet.arp import arp
+from ryu.lib.packet import ethernet
+from ryu.lib.packet import arp
 from ryu.lib.packet.icmpv6 import icmpv6
 from ryu.topology import event
 from ryu.topology.api import get_all_switch, get_all_link, get_switch, get_link
@@ -97,7 +97,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         eth_type = 0
         dst_mac = 0
 
-        pkt_eth_list = pkt.get_protocols(ethernet)
+        pkt_eth_list = pkt.get_protocols(ethernet.ethernet)
         if pkt_eth_list:
             pkt_eth = pkt_eth_list[0]
             print ("pkt_eth.dst: " + str(pkt_eth.dst))
@@ -106,12 +106,14 @@ class SimpleSwitch13(app_manager.RyuApp):
             eth_type = pkt_eth.ethertype
 
         # This 'if condition' is for learning the ip and mac addresses of hosts as well as .
-        pkt_arp_list = pkt.get_protocols(arp)
+        pkt_arp_list = pkt.get_protocols(arp.arp)
         if pkt_arp_list:
             self.logger.info("packet-in: %s" % (pkt,))
             print "datapath id: "+str(dpid)
             print "port: "+str(port)
             pkt_arp = pkt_arp_list[0]
+            if pkt_arp.opcode != arp.ARP_REQUEST:
+                return
             print ("pkt_arp: " + str(pkt_arp))
             print ("pkt_arp:dst_ip: " + str(pkt_arp.dst_ip))
             print ("pkt_arp:src_ip: " + str(pkt_arp.src_ip))
@@ -145,31 +147,68 @@ class SimpleSwitch13(app_manager.RyuApp):
 
             print ("ip_cache.ip_to_dpid_port: "+str(self.topo_shape.ip_cache.ip_to_dpid_port))
 
-            # find_shortest_path(): Finds shortest path starting dpid for all nodes.
-            # shortest_path_node: Contains the last node you need to get in order to reach dest from source dpid
-            shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(s=dpid)
-            print "Shortest Path in ARP packet_in:"
-            print("\tNew shortest_path_hubs: {0}"
-                  "\n\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
+            d_resu = self.topo_shape.ip_cache.get_dpid_for_ip(d_ip)
+            if d_resu != -1:
+                self._handle_arp(datapath=datapath,
+                                 port=self.topo_shape.ip_cache.get_port_num_connected_to_sw(in_dpid=datapath.id, in_ip=s_ip),
+                                 pkt_ethernet=pkt.get_protocols(ethernet.ethernet)[0],
+                                 pkt_arp=pkt_arp,
+                                 target_hw_addr=self.topo_shape.ip_cache.get_hw_address_of_host(d_ip),
+                                 target_ip_addr=d_ip)
 
-            # Based on the ip of the destination the dpid of the switch connected to host ip
-            dst_dpid_for_ip = self.topo_shape.ip_cache.get_dpid_for_ip(ip=d_ip)
-            print ("found {0} ip connected to dpid {1}".format(d_ip, dst_dpid_for_ip))
-            if dst_dpid_for_ip != -1:
-                temp_dpid_path = self.topo_shape.find_path(s=dpid, d=dst_dpid_for_ip, s_p_n=shortest_path_node)
-                temp_link_path = self.topo_shape.convert_dpid_path_to_links(dpid_list=temp_dpid_path)
-                reverted_temp_link_path = self.topo_shape.revert_link_list(link_list=temp_link_path)
-                print("temp_dpid_path: "+str(temp_dpid_path))
-                print "eth_type:  " +str(eth_type)
+                # find_shortest_path(): Finds shortest path starting dpid for all nodes.
+                # shortest_path_node: Contains the last node you need to get in order to reach dest from source dpid
+                shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(s=dpid)
+                print "Shortest Path in ARP packet_in:"
+                print("\tNew shortest_path_hubs: {0}"
+                      "\n\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
 
-                #self.topo_shape.make_path_between_hosts_in_linklist_for_flood(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path)
-                #self.topo_shape.make_path_between_hosts_in_linklist_for_flood(src_ip=d_ip, dst_ip=s_ip, in_link_path=reverted_temp_link_path)
-                self.topo_shape.make_path_between_hosts_in_linklist(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path)
-                self.topo_shape.make_path_between_hosts_in_linklist(src_ip=d_ip, dst_ip=s_ip, in_link_path=reverted_temp_link_path)
+                # Based on the ip of the destination the dpid of the switch connected to host ip
+                dst_dpid_for_ip = self.topo_shape.ip_cache.get_dpid_for_ip(ip=d_ip)
+                print ("found {0} ip connected to dpid {1}".format(d_ip, dst_dpid_for_ip))
+                if dst_dpid_for_ip != -1:
+                    temp_dpid_path = self.topo_shape.find_path(s=dpid, d=dst_dpid_for_ip, s_p_n=shortest_path_node)
+                    temp_link_path = self.topo_shape.convert_dpid_path_to_links(dpid_list=temp_dpid_path)
+                    reverted_temp_link_path = self.topo_shape.revert_link_list(link_list=temp_link_path)
+                    print("temp_dpid_path: "+str(temp_dpid_path))
+                    print "eth_type:  " +str(eth_type)
+
+                    #self.topo_shape.make_path_between_hosts_in_linklist_for_flood(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path)
+                    #self.topo_shape.make_path_between_hosts_in_linklist_for_flood(src_ip=d_ip, dst_ip=s_ip, in_link_path=reverted_temp_link_path)
+                    self.topo_shape.make_path_between_hosts_in_linklist(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path)
+                    self.topo_shape.make_path_between_hosts_in_linklist(src_ip=d_ip, dst_ip=s_ip, in_link_path=reverted_temp_link_path)
 
         # This prints list of hw addresses of the port for given dpid
         #print(str(self.topo_shape.get_hw_addresses_for_dpid(in_dpid=dpid)))
 
+    def _handle_arp(self, datapath, port, pkt_ethernet, pkt_arp, target_hw_addr, target_ip_addr):
+        # see http://osrg.github.io/ryu-book/en/html/packet_lib.html
+        if pkt_arp.opcode != arp.ARP_REQUEST:
+            return
+        pkt = packet.Packet()
+        pkt.add_protocol(ethernet.ethernet(ethertype=pkt_ethernet.ethertype,
+                                           dst=pkt_ethernet.src,
+                                           src=target_hw_addr))
+        pkt.add_protocol(arp.arp(opcode=arp.ARP_REPLY,
+                                 src_mac=target_hw_addr,
+                                 src_ip=target_ip_addr,
+                                 dst_mac=pkt_arp.src_mac,
+                                 dst_ip=pkt_arp.src_ip))
+        self._send_packet(datapath, port, pkt)
+
+    def _send_packet(self, datapath, port, pkt):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        pkt.serialize()
+        self.logger.info("To dpid {0} packet-out {1}".format(datapath.id, pkt))
+        data = pkt.data
+        actions = [parser.OFPActionOutput(port=port)]
+        out = parser.OFPPacketOut(datapath=datapath,
+                                  buffer_id=ofproto.OFP_NO_BUFFER,
+                                  in_port=ofproto.OFPP_CONTROLLER,
+                                  actions=actions,
+                                  data=data)
+        datapath.send_msg(out)
     ###################################################################################
     """
     The event EventSwitchEnter will trigger the activation of get_topology_data().
@@ -468,7 +507,7 @@ class TopoStructure(object):
                 idle_timeout = hard_timeout = 0
                 priority = 32768
                 buffer_id = ofp.OFP_NO_BUFFER
-                match = ofp_parser.OFPMatch(arp_tpa=dst_ip)
+                match = ofp_parser.OFPMatch(in_port=sw_port_connected_to_src_host)
                 actions = [ofp_parser.OFPActionOutput(port=ports[0])]
                 #print("\tFF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Actions.port: {3}".format(
                 #    l.src.dpid, sw_port_connected_to_src_host,host_eth_dst_addr, ports[0]))
@@ -489,7 +528,7 @@ class TopoStructure(object):
                 ofp = dppp.ofproto
                 ofp_parser = dppp.ofproto_parser
 
-                match = ofp_parser.OFPMatch(arp_tpa=dst_ip)
+                match = ofp_parser.OFPMatch(in_port=ports[0])
                 # The port which destination host is connected to last switch
                 sw_port_connected_to_dst_host = self.ip_cache.get_port_num_connected_to_sw(in_dpid=l.dst.dpid, in_ip=dst_ip)
                 if sw_port_connected_to_dst_host > 0:
