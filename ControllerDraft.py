@@ -97,28 +97,28 @@ class SimpleSwitch13(app_manager.RyuApp):
         eth_type = 0
         dst_mac = 0
 
-        pkt_eth_list = pkt.get_protocols(ethernet.ethernet)
-        if pkt_eth_list:
-            pkt_eth = pkt_eth_list[0]
-            print ("pkt_eth.dst: " + str(pkt_eth.dst))
-            print ("pkt_eth.src: " + str(pkt_eth.src))
+        pkt_eth = pkt.get_protocol(ethernet.ethernet)
+        if pkt_eth:
+
             dst_mac = pkt_eth.dst
             eth_type = pkt_eth.ethertype
 
         # This 'if condition' is for learning the ip and mac addresses of hosts as well as .
-        pkt_arp_list = pkt.get_protocols(arp.arp)
-        if pkt_arp_list:
+        pkt_arp = pkt.get_protocol(arp.arp)
+        if pkt_arp:
             self.logger.info("packet-in: %s" % (pkt,))
             print "datapath id: "+str(dpid)
             print "port: "+str(port)
-            pkt_arp = pkt_arp_list[0]
-            if pkt_arp.opcode != arp.ARP_REQUEST:
-                return
+            #pkt_arp = pkt_arp_list[0]
+            #if pkt_arp.opcode != arp.ARP_REQUEST:
+            #    return
+            print ("pkt_eth.dst: " + str(pkt_eth.dst))
+            print ("pkt_eth.src: " + str(pkt_eth.src))
             print ("pkt_arp: " + str(pkt_arp))
-            print ("pkt_arp:dst_ip: " + str(pkt_arp.dst_ip))
             print ("pkt_arp:src_ip: " + str(pkt_arp.src_ip))
-            print ("pkt_arp:dst_mac: " + str(pkt_arp.dst_mac))
+            print ("pkt_arp:dst_ip: " + str(pkt_arp.dst_ip))
             print ("pkt_arp:src_mac: " + str(pkt_arp.src_mac))
+            print ("pkt_arp:dst_mac: " + str(pkt_arp.dst_mac))
 
             d_ip = pkt_arp.dst_ip
             s_ip = pkt_arp.src_ip
@@ -128,6 +128,7 @@ class SimpleSwitch13(app_manager.RyuApp):
 
             in_port = msg.match['in_port']
 
+            print ("Before ip_cache.ip_to_dpid_port: "+str(self.topo_shape.ip_cache.ip_to_dpid_port))
             # This is where ip address of hosts is learnt.
             resu = self.topo_shape.ip_cache.get_dpid_for_ip(s_ip)
             print("resu: "+str(resu))
@@ -137,36 +138,31 @@ class SimpleSwitch13(app_manager.RyuApp):
                              "sw_port_mac":self.topo_shape.get_hw_address_for_port_of_dpid(in_dpid=dpid, in_port_no=in_port)}
                 self.topo_shape.ip_cache.add_dpid_host(in_dpid=dpid, in_host_ip=s_ip, **temp_dict)
             else:
+                print("-------------------------------------------")
                 # IF there is such an entry for ip address s_ip then just update the values
-                self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["sw_port_no"] = in_port
+                #self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["sw_port_no"] = in_port
                 # Updating mac: because a host may get disconnected and new host with same ip but different mac connects
-                self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["connected_host_mac"] = s_mac
+                #self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["connected_host_mac"] = s_mac
                 # get_hw_address_for_port_of_dpid(): gets and mac address of a given port id on specific sw or dpid
-                self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
-                    in_dpid=dpid, in_port_no=in_port)
+                #self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
+                #    in_dpid=dpid, in_port_no=in_port)
 
-            print ("ip_cache.ip_to_dpid_port: "+str(self.topo_shape.ip_cache.ip_to_dpid_port))
+            print ("After ip_cache.ip_to_dpid_port: "+str(self.topo_shape.ip_cache.ip_to_dpid_port))
 
             d_resu = self.topo_shape.ip_cache.get_dpid_for_ip(d_ip)
             if d_resu != -1:
-                self._handle_arp(datapath=datapath,
-                                 port=self.topo_shape.ip_cache.get_port_num_connected_to_sw(in_dpid=datapath.id, in_ip=s_ip),
-                                 pkt_ethernet=pkt.get_protocols(ethernet.ethernet)[0],
-                                 pkt_arp=pkt_arp,
-                                 target_hw_addr=self.topo_shape.ip_cache.get_hw_address_of_host(d_ip),
-                                 target_ip_addr=d_ip)
 
                 # find_shortest_path(): Finds shortest path starting dpid for all nodes.
                 # shortest_path_node: Contains the last node you need to get in order to reach dest from source dpid
                 shortest_path_hubs, shortest_path_node = self.topo_shape.find_shortest_path(s=dpid)
-                print "Shortest Path in ARP packet_in:"
+                print "Shortest Path in ARP packet_in starting dpid: {0}".format(dpid)
                 print("\tNew shortest_path_hubs: {0}"
                       "\n\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
 
                 # Based on the ip of the destination the dpid of the switch connected to host ip
                 dst_dpid_for_ip = self.topo_shape.ip_cache.get_dpid_for_ip(ip=d_ip)
                 print ("found {0} ip connected to dpid {1}".format(d_ip, dst_dpid_for_ip))
-                if dst_dpid_for_ip != -1:
+                if dst_dpid_for_ip != -1 and dpid != dst_dpid_for_ip:
                     temp_dpid_path = self.topo_shape.find_path(s=dpid, d=dst_dpid_for_ip, s_p_n=shortest_path_node)
                     temp_link_path = self.topo_shape.convert_dpid_path_to_links(dpid_list=temp_dpid_path)
                     reverted_temp_link_path = self.topo_shape.revert_link_list(link_list=temp_link_path)
@@ -178,6 +174,12 @@ class SimpleSwitch13(app_manager.RyuApp):
                     self.topo_shape.make_path_between_hosts_in_linklist(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path)
                     self.topo_shape.make_path_between_hosts_in_linklist(src_ip=d_ip, dst_ip=s_ip, in_link_path=reverted_temp_link_path)
 
+                self._handle_arp(datapath=datapath,
+                                 port=port,
+                                 pkt_ethernet=pkt.get_protocols(ethernet.ethernet)[0],
+                                 pkt_arp=pkt_arp,
+                                 target_hw_addr=self.topo_shape.ip_cache.get_hw_address_of_host(d_ip),
+                                 target_ip_addr=d_ip)
         # This prints list of hw addresses of the port for given dpid
         #print(str(self.topo_shape.get_hw_addresses_for_dpid(in_dpid=dpid)))
 
@@ -512,7 +514,7 @@ class TopoStructure(object):
                 #print("\tFF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Actions.port: {3}".format(
                 #    l.src.dpid, sw_port_connected_to_src_host,host_eth_dst_addr, ports[0]))
                 print("\tFF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Match.arp_tpa: {3} Actions.port: {4}".format(
-                    l.src.dpid, "NONE", "NONE", dst_ip, ports[0]))
+                    l.src.dpid, sw_port_connected_to_src_host, "NONE", "NONE", ports[0]))
                 # Gets datapath object of the switch with dpid equal to temp_dpid
                 self.add_flow(dpp, 1, match, actions)
 
@@ -528,7 +530,7 @@ class TopoStructure(object):
                 ofp = dppp.ofproto
                 ofp_parser = dppp.ofproto_parser
 
-                match = ofp_parser.OFPMatch(in_port=ports[0])
+                match = ofp_parser.OFPMatch(in_port=portss[0])
                 # The port which destination host is connected to last switch
                 sw_port_connected_to_dst_host = self.ip_cache.get_port_num_connected_to_sw(in_dpid=l.dst.dpid, in_ip=dst_ip)
                 if sw_port_connected_to_dst_host > 0:
@@ -536,7 +538,7 @@ class TopoStructure(object):
                     #print("\tSF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Actions.port: {3}".format(
                     #    l.dst.dpid, portss[0], host_eth_dst_addr, sw_port_connected_to_dst_host))
                     print("\tSF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Match.arp_tpa: {3} Actions.port: {4}".format(
-                        dppp.id, "NONE", "NONE", dst_ip, sw_port_connected_to_dst_host))
+                        dppp.id, portss[0], "NONE", "NONE", sw_port_connected_to_dst_host))
 
                     # Gets datapath object of the switch with dpid equal to temp_dpid
                     self.add_flow(dppp, 1, match, actions)
