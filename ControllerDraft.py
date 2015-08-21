@@ -166,8 +166,8 @@ class SimpleSwitch13(app_manager.RyuApp):
                     temp_dpid_path = self.topo_shape.find_path(s=dpid, d=dst_dpid_for_ip, s_p_n=shortest_path_node)
                     temp_link_path = self.topo_shape.convert_dpid_path_to_links(dpid_list=temp_dpid_path)
                     reverted_temp_link_path = self.topo_shape.revert_link_list(link_list=temp_link_path)
-                    print("temp_dpid_path: "+str(temp_dpid_path))
-                    print "eth_type:  " +str(eth_type)
+                    #print("temp_dpid_path: "+str(temp_dpid_path))
+                    #print "eth_type:  " +str(eth_type)
 
                     #self.topo_shape.make_path_between_hosts_in_linklist_for_flood(src_ip=s_ip, dst_ip=d_ip, in_link_path=temp_link_path)
                     #self.topo_shape.make_path_between_hosts_in_linklist_for_flood(src_ip=d_ip, dst_ip=s_ip, in_link_path=reverted_temp_link_path)
@@ -292,24 +292,15 @@ class SimpleSwitch13(app_manager.RyuApp):
                 reverted_result = self.topo_shape.revert_link_list(link_list=result)
                 self.topo_shape.print_input_links(list_links=reverted_result)
                 # ToDo: Note that here i assume that each sw has one host connected to it.
+                first_sw = self.topo_shape.get_first_sw_dpid_in_linklist(in_linklist=result)
                 last_sw = self.topo_shape.get_last_sw_dpid_in_linklist(in_linklist=result)
-                print("last_sw: "+str(last_sw))
-                y = self.topo_shape.ip_cache.get_hw_address_of_host(
-                                                        self.topo_shape.ip_cache.get_ip_addresses_connected_to_dpid(
-                                                            in_dpid=last_sw)[0])
-
-                print("dst host: "+y)
-                #self.topo_shape.send_flows_for_path(in_link_path=result,
-                #                                    dst_addr=y)
-                last_sw = self.topo_shape.get_last_sw_dpid_in_linklist(in_linklist=reverted_result)
-                print("last_sw: "+str(last_sw))
-                x =self.topo_shape.ip_cache.get_hw_address_of_host(
-                                                        self.topo_shape.ip_cache.get_ip_addresses_connected_to_dpid(
-                                                            in_dpid=last_sw)[0])
-                print("dst host: "+x)
-                #self.topo_shape.send_flows_for_path(in_link_path=reverted_result,
-                #                                   dst_addr=x)
-
+                first_ip = self.topo_shape.ip_cache.get_ip_addresses_connected_to_dpid(in_dpid=first_sw)[0]
+                last_ip = self.topo_shape.ip_cache.get_ip_addresses_connected_to_dpid(in_dpid=last_sw)[0]
+                self.topo_shape.make_path_between_hosts_in_linklist(src_ip=first_ip, dst_ip=last_ip, in_link_path=result)
+                print ("Second make path")
+                print ("src_ip= {0} dst_ip= {1}".format(last_ip, first_ip))
+                self.topo_shape.print_input_links((reversed(reverted_result)))
+                self.topo_shape.make_path_between_hosts_in_linklist(src_ip=last_ip, dst_ip=first_ip, in_link_path=reverted_result)
         elif port_attr.state == 0:
             self.topo_shape.print_links(" Link Up")
         self.topo_shape.lock.release()
@@ -326,9 +317,9 @@ class HostCache(object):
         self.ip_to_dpid_port = {}
 
     def get_hw_address_of_host(self, in_ip):
-        print("in_ip: "+str(in_ip))
+        #print("in_ip: "+str(in_ip))
         t_dpid = self.get_dpid_for_ip(ip=in_ip)
-        print ("t_dpid: "+str(t_dpid))
+        #print ("t_dpid: "+str(t_dpid))
         return self.ip_to_dpid_port[t_dpid][in_ip]["connected_host_mac"]
 
     def add_dpid_host(self,in_dpid, in_host_ip, **in_dict):
@@ -382,7 +373,7 @@ class HostCache(object):
         """
         for temp_dpid in self.ip_to_dpid_port.keys():
             if ip in self.ip_to_dpid_port[temp_dpid].keys():
-                print "temp_dpid: "+str(temp_dpid)
+                print "\ttemp_dpid for ip : ".format(str(temp_dpid), ip)
                 return temp_dpid
         return -1
 
@@ -504,24 +495,28 @@ class TopoStructure(object):
         :type in_link_path: list
         :param in_link_path: A list of link objects. Links are only between switches; i.e. no link between switches and hosts are recorded in this list.
         """
-
+        for ll in in_link_path:
+            print(str(ll))
         for ind, l in enumerate(in_link_path):
-            for l in in_link_path:
-                print "  >>: "+str(l)
+            print(str(l))
+            host_eth_dst_addr = self.ip_cache.get_hw_address_of_host(in_ip=dst_ip)
+            print("Mac address for {0} is {1}".format(dst_ip, host_eth_dst_addr))
             if ind == 0:
+                print"sdfsdfsdf"
+
                 # The variable ports is a list of ports for switch with dpid equal to temp_dpid which the ports
                 # are used in the list of links `in_link_path`
-                ports = self.find_ports_for_dpid(l.src.dpid, in_link_path)
-                if len(ports) > 1:
+                print("(l.src.dpid: {0})".format(l.src.dpid))
+                src_dpid_ports = self.find_ports_for_dpid(l.src.dpid, in_link_path)
+                if len(src_dpid_ports) > 1:
                     print "There should be one port"
                 # Mac address of the destination host
-                host_eth_dst_addr = self.ip_cache.get_hw_address_of_host(in_ip=dst_ip)
 
                 sw_port_connected_to_src_host = self.ip_cache.get_port_num_connected_to_sw(in_dpid=l.src.dpid, in_ip=src_ip)
 
-                dpp = self.get_dp_switch_with_id(l.src.dpid)
-                ofp = dpp.ofproto
-                ofp_parser = dpp.ofproto_parser
+                src_dp = self.get_dp_switch_with_id(l.src.dpid)
+                ofp = src_dp.ofproto
+                ofp_parser = src_dp.ofproto_parser
                 # See http://ryu.readthedocs.org/en/latest/ofproto_v1_3_ref.html
                 cookie = cookie_mask = 0
                 table_id = 0
@@ -529,27 +524,27 @@ class TopoStructure(object):
                 priority = 32768
                 buffer_id = ofp.OFP_NO_BUFFER
                 match = ofp_parser.OFPMatch(in_port=sw_port_connected_to_src_host, eth_dst=host_eth_dst_addr)
-                actions = [ofp_parser.OFPActionOutput(port=ports[0])]
+                actions = [ofp_parser.OFPActionOutput(port=l.src.port_no)]
                 #print("\tFF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Actions.port: {3}".format(
                 #    l.src.dpid, sw_port_connected_to_src_host,host_eth_dst_addr, ports[0]))
                 print("\tFF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Match.arp_tpa: {3} Actions.port: {4}".format(
-                    l.src.dpid, sw_port_connected_to_src_host, "NONE", "NONE", ports[0]))
+                    l.src.dpid, sw_port_connected_to_src_host, host_eth_dst_addr, "NONE", l.src.port_no))
                 # Gets datapath object of the switch with dpid equal to temp_dpid
-                self.add_flow(dpp, 1, match, actions)
+                self.add_flow(src_dp, 1, match, actions)
 
             if ind == (len(in_link_path)-1):
+                print"fffffffff"
                 # The variable ports is a list of ports for switch with dpid equal to temp_dpid which the ports
                 # are used in the list of links `in_link_path`
-                portss = self.find_ports_for_dpid(l.dst.dpid, in_link_path)
-                if len(portss) > 1:
+                dst_dpid_ports = self.find_ports_for_dpid(l.dst.dpid, in_link_path)
+                if len(dst_dpid_ports) > 1:
                     print "There should be one port"
-                # Mac address of the destination host
-                host_eth_dst_addr = self.ip_cache.get_hw_address_of_host(in_ip=dst_ip)
-                dppp = self.get_dp_switch_with_id(l.dst.dpid)
-                ofp = dppp.ofproto
-                ofp_parser = dppp.ofproto_parser
 
-                match = ofp_parser.OFPMatch(in_port=portss[0], eth_dst=host_eth_dst_addr)
+                dst_dp = self.get_dp_switch_with_id(l.dst.dpid)
+                ofp = dst_dp.ofproto
+                ofp_parser = dst_dp.ofproto_parser
+
+                match = ofp_parser.OFPMatch(in_port=l.dst.port_no, eth_dst=host_eth_dst_addr)
                 # The port which destination host is connected to last switch
                 sw_port_connected_to_dst_host = self.ip_cache.get_port_num_connected_to_sw(in_dpid=l.dst.dpid, in_ip=dst_ip)
                 if sw_port_connected_to_dst_host > 0:
@@ -557,17 +552,28 @@ class TopoStructure(object):
                     #print("\tSF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Actions.port: {3}".format(
                     #    l.dst.dpid, portss[0], host_eth_dst_addr, sw_port_connected_to_dst_host))
                     print("\tSF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Match.arp_tpa: {3} Actions.port: {4}".format(
-                        dppp.id, portss[0], "NONE", "NONE", sw_port_connected_to_dst_host))
+                        dst_dp.id, l.dst.port_no, host_eth_dst_addr, "NONE", sw_port_connected_to_dst_host))
 
                     # Gets datapath object of the switch with dpid equal to temp_dpid
-                    self.add_flow(dppp, 1, match, actions)
+                    self.add_flow(dst_dp, 1, match, actions)
 
                 else:
                     print("Port Number if neg")
-            else:
-                # Todo: need to add flows for switches in middle
-                pass
-                # Add all flows at once
+            if ind < (len(in_link_path)-1) and (ind + 1) < len(in_link_path):
+
+                print"hhhhhhhhhh ind = {0}".format(ind)
+
+                # Adding flows for the switches in the middle
+                # Todo: need to add flows for switches in middle -> done need to test it tho.
+                mid_dp = self.get_dp_switch_with_id(l.dst.dpid)
+                ofp = mid_dp.ofproto
+                ofp_parser = mid_dp.ofproto_parser
+
+                match = ofp_parser.OFPMatch(in_port=l.dst.port_no, eth_dst=host_eth_dst_addr)
+                actions = [ofp_parser.OFPActionOutput(port=in_link_path[ind+1].src.port_no)]
+                self.add_flow(mid_dp, 1, match, actions)
+                print("\tSF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Match.arp_tpa: {3} Actions.port: {4}".format(
+                        mid_dp.id, l.dst.port_no, host_eth_dst_addr, "NONE", in_link_path[ind+1].src.port_no))
 
     def make_path_between_hosts_in_linklist_for_flood(self, src_ip, dst_ip, in_link_path):
         """
@@ -737,11 +743,11 @@ class TopoStructure(object):
         :return: Returns a list where each link is the reversed of the the original one.
         """
         reverted_list = []
-        for l in link_list:
+        for l in reversed(link_list):
             for ll in self.topo_raw_links:
                 if l.dst.dpid == ll.src.dpid and l.src.dpid == ll.dst.dpid:
                     reverted_list.append(ll)
-        return reverted_list
+        return (reverted_list)
 
     def convert_dpid_path_to_links(self, dpid_list):
         """
@@ -762,7 +768,11 @@ class TopoStructure(object):
 
     def get_last_sw_dpid_in_linklist(self, in_linklist):
         # linklist is same as path, a colletion of links
-        return in_linklist.pop().dst.dpid
+        return in_linklist[-1].dst.dpid
+
+    def get_first_sw_dpid_in_linklist(self, in_linklist):
+        # linklist is same as path, a colletion of links
+        return in_linklist[0].src.dpid
 
     def print_links(self, func_str=None):
         """
