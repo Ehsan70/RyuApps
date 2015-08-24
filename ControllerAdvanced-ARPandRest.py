@@ -8,29 +8,54 @@ from ryu.ofproto import ofproto_v1_3, ofproto_v1_3_parser
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 from ryu.lib.packet import arp
-from ryu.lib.packet.icmpv6 import icmpv6
+from ryu.app.wsgi import ControllerBase, WSGIApplication, route
 from ryu.topology import event
-from ryu.topology.api import get_all_switch, get_all_link, get_switch, get_link
 from ryu.lib import dpid as dpid_lib
 from ryu.controller import dpset
 import copy
 from threading import Lock
-
+# Imports for wsgi server
+from ryu.topology.api import get_all_switch, get_all_link, get_switch, get_link
+from webob import Response
+import json
 UP = 1
 DOWN = 0
 
 ETH_ADDRESSES = [0x0802, 0x88CC, 0x8808, 0x8809, 0x0800, 0x86DD, 0x88F7]
 
-class SimpleSwitch13(app_manager.RyuApp):
+"""
+This class is responsible for
+"""
+simple_switch_instance_name = 'simple_switch_api_app'
+url = '/simpleswitch/mactable/{dpid}'
+urll = '/mininet/topo/switches/'
+class RestHandler(ControllerBase):
+    _CONTEXTS = { 'wsgi': WSGIApplication }
+
+    def __init__(self, req, link, data, **config):
+        super(RestHandler, self).__init__(req, link, data, **config)
+        self.simpl_switch_spp = data[simple_switch_instance_name]
+
+    @route('simpleswitch', urll, methods=['GET'])
+    def list_mac_table(self, req, **kwargs):
+        simple_switch = self.simpl_switch_spp
+
+        body = json.dumps(simple_switch.topo_shape.get_switches_dpid())
+        return Response(content_type='application/json', body=body)
+
+class AdvanceController13(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
+    _CONTEXTS = { 'wsgi': WSGIApplication }
 
     def __init__(self, *args, **kwargs):
-        super(SimpleSwitch13, self).__init__(*args, **kwargs)
+        super(AdvanceController13, self).__init__(*args, **kwargs)
         # USed for learning switch functioning
         self.mac_to_port = {}
         # Holds the topology data and structure
         self.topo_shape = TopoStructure()
-        self.done = 0
+
+        wsgi = kwargs['wsgi']
+        wsgi.register(RestHandler, {simple_switch_instance_name : self})
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
