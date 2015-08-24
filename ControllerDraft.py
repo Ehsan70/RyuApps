@@ -86,16 +86,11 @@ class SimpleSwitch13(app_manager.RyuApp):
         msg = ev.msg
         print "#############################################"
         datapath = msg.datapath
-        parser = datapath.ofproto_parser
-        ofproto = datapath.ofproto
         dpid = datapath.id
 
         port = msg.match['in_port']
         pkt = packet.Packet(data=msg.data)
         #self.logger.info("packet-in: %s" % (pkt,))
-
-        eth_type = 0
-        dst_mac = 0
 
         pkt_eth = pkt.get_protocol(ethernet.ethernet)
         if pkt_eth:
@@ -106,12 +101,8 @@ class SimpleSwitch13(app_manager.RyuApp):
         # This 'if condition' is for learning the ip and mac addresses of hosts as well as .
         pkt_arp = pkt.get_protocol(arp.arp)
         if pkt_arp:
-            self.logger.info("packet-in: %s" % (pkt,))
             print "datapath id: "+str(dpid)
             print "port: "+str(port)
-            #pkt_arp = pkt_arp_list[0]
-            #if pkt_arp.opcode != arp.ARP_REQUEST:
-            #    return
             print ("pkt_eth.dst: " + str(pkt_eth.dst))
             print ("pkt_eth.src: " + str(pkt_eth.src))
             print ("pkt_arp: " + str(pkt_arp))
@@ -120,9 +111,11 @@ class SimpleSwitch13(app_manager.RyuApp):
             print ("pkt_arp:src_mac: " + str(pkt_arp.src_mac))
             print ("pkt_arp:dst_mac: " + str(pkt_arp.dst_mac))
 
+            # Destination and source ip address
             d_ip = pkt_arp.dst_ip
             s_ip = pkt_arp.src_ip
 
+            # Destination and source mac address (HW address)
             d_mac = pkt_arp.dst_mac
             s_mac = pkt_arp.src_mac
 
@@ -140,12 +133,12 @@ class SimpleSwitch13(app_manager.RyuApp):
             else:
                 print("-------------------------------------------")
                 # IF there is such an entry for ip address s_ip then just update the values
-                #self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["sw_port_no"] = in_port
+                self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["sw_port_no"] = in_port
                 # Updating mac: because a host may get disconnected and new host with same ip but different mac connects
-                #self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["connected_host_mac"] = s_mac
+                self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["connected_host_mac"] = s_mac
                 # get_hw_address_for_port_of_dpid(): gets and mac address of a given port id on specific sw or dpid
-                #self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
-                #    in_dpid=dpid, in_port_no=in_port)
+                self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
+                    in_dpid=dpid, in_port_no=in_port)
 
             print ("After ip_cache.ip_to_dpid_port: "+str(self.topo_shape.ip_cache.ip_to_dpid_port))
 
@@ -495,14 +488,11 @@ class TopoStructure(object):
         :type in_link_path: list
         :param in_link_path: A list of link objects. Links are only between switches; i.e. no link between switches and hosts are recorded in this list.
         """
-        for ll in in_link_path:
-            print(str(ll))
         for ind, l in enumerate(in_link_path):
-            print(str(l))
+            # Mac address of the destination host
             host_eth_dst_addr = self.ip_cache.get_hw_address_of_host(in_ip=dst_ip)
-            print("Mac address for {0} is {1}".format(dst_ip, host_eth_dst_addr))
+            #print("\tMac address for {0} is {1}".format(dst_ip, host_eth_dst_addr))
             if ind == 0:
-                print"sdfsdfsdf"
 
                 # The variable ports is a list of ports for switch with dpid equal to temp_dpid which the ports
                 # are used in the list of links `in_link_path`
@@ -510,7 +500,6 @@ class TopoStructure(object):
                 src_dpid_ports = self.find_ports_for_dpid(l.src.dpid, in_link_path)
                 if len(src_dpid_ports) > 1:
                     print "There should be one port"
-                # Mac address of the destination host
 
                 sw_port_connected_to_src_host = self.ip_cache.get_port_num_connected_to_sw(in_dpid=l.src.dpid, in_ip=src_ip)
 
@@ -518,30 +507,22 @@ class TopoStructure(object):
                 ofp = src_dp.ofproto
                 ofp_parser = src_dp.ofproto_parser
                 # See http://ryu.readthedocs.org/en/latest/ofproto_v1_3_ref.html
-                cookie = cookie_mask = 0
-                table_id = 0
-                idle_timeout = hard_timeout = 0
-                priority = 32768
-                buffer_id = ofp.OFP_NO_BUFFER
                 match = ofp_parser.OFPMatch(in_port=sw_port_connected_to_src_host, eth_dst=host_eth_dst_addr)
                 actions = [ofp_parser.OFPActionOutput(port=l.src.port_no)]
-                #print("\tFF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Actions.port: {3}".format(
-                #    l.src.dpid, sw_port_connected_to_src_host,host_eth_dst_addr, ports[0]))
                 print("\tFF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Match.arp_tpa: {3} Actions.port: {4}".format(
                     l.src.dpid, sw_port_connected_to_src_host, host_eth_dst_addr, "NONE", l.src.port_no))
                 # Gets datapath object of the switch with dpid equal to temp_dpid
                 self.add_flow(src_dp, 1, match, actions)
 
             if ind == (len(in_link_path)-1):
-                print"fffffffff"
-                # The variable ports is a list of ports for switch with dpid equal to temp_dpid which the ports
+                # The variable dst_dpid_ports is a list of ports for switch with dpid equal to temp_dpid which the ports
                 # are used in the list of links `in_link_path`
                 dst_dpid_ports = self.find_ports_for_dpid(l.dst.dpid, in_link_path)
                 if len(dst_dpid_ports) > 1:
                     print "There should be one port"
 
+                # dst_dp if the datapath object for the switch with datapath id of l.dst.dpid
                 dst_dp = self.get_dp_switch_with_id(l.dst.dpid)
-                ofp = dst_dp.ofproto
                 ofp_parser = dst_dp.ofproto_parser
 
                 match = ofp_parser.OFPMatch(in_port=l.dst.port_no, eth_dst=host_eth_dst_addr)
@@ -549,8 +530,6 @@ class TopoStructure(object):
                 sw_port_connected_to_dst_host = self.ip_cache.get_port_num_connected_to_sw(in_dpid=l.dst.dpid, in_ip=dst_ip)
                 if sw_port_connected_to_dst_host > 0:
                     actions = [ofp_parser.OFPActionOutput(port=sw_port_connected_to_dst_host)]
-                    #print("\tSF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Actions.port: {3}".format(
-                    #    l.dst.dpid, portss[0], host_eth_dst_addr, sw_port_connected_to_dst_host))
                     print("\tSF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Match.arp_tpa: {3} Actions.port: {4}".format(
                         dst_dp.id, l.dst.port_no, host_eth_dst_addr, "NONE", sw_port_connected_to_dst_host))
 
@@ -559,10 +538,8 @@ class TopoStructure(object):
 
                 else:
                     print("Port Number if neg")
+
             if ind < (len(in_link_path)-1) and (ind + 1) < len(in_link_path):
-
-                print"hhhhhhhhhh ind = {0}".format(ind)
-
                 # Adding flows for the switches in the middle
                 # Todo: need to add flows for switches in middle -> done need to test it tho.
                 mid_dp = self.get_dp_switch_with_id(l.dst.dpid)
@@ -574,95 +551,6 @@ class TopoStructure(object):
                 self.add_flow(mid_dp, 1, match, actions)
                 print("\tSF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Match.arp_tpa: {3} Actions.port: {4}".format(
                         mid_dp.id, l.dst.port_no, host_eth_dst_addr, "NONE", in_link_path[ind+1].src.port_no))
-
-    def make_path_between_hosts_in_linklist_for_flood(self, src_ip, dst_ip, in_link_path):
-        """
-        Gets list of back up link and then based on them it sends flows to the switch.
-        Note that it takes care of nodes in the middle very well.
-        intent: Based on onos definition intent is a set of flows send to switches in order
-        create a path between two endpoints which is this case it's src_ip and dst_ip.
-
-        :type src_ip: str
-        :param src_ip: Ip address of the destination host
-        :type dst_ip: str
-        :param dst_ip: Ip address of the source host
-        :type in_link_path: list
-        :param in_link_path: A list of link objects. Links are only between switches; i.e. no link between switches and hosts are recorded in this list.
-        """
-
-        for ind, l in enumerate(in_link_path):
-            for l in in_link_path:
-                print "  >>: "+str(l)
-            if ind == 0:
-                # The variable ports is a list of ports for switch with dpid equal to temp_dpid which the ports
-                # are used in the list of links `in_link_path`
-                ports = self.find_ports_for_dpid(l.src.dpid, in_link_path)
-                if len(ports) > 1:
-                    print "There should be one port"
-                # Mac address of the destination host
-                host_eth_dst_addr = self.ip_cache.get_hw_address_of_host(in_ip=dst_ip)
-                sw_port_connected_to_src_host = self.ip_cache.get_port_num_connected_to_sw(in_dpid=l.src.dpid, in_ip=src_ip)
-
-                dpp = self.get_dp_switch_with_id(l.src.dpid)
-                ofp = dpp.ofproto
-                ofp_parser = dpp.ofproto_parser
-                # See http://ryu.readthedocs.org/en/latest/ofproto_v1_3_ref.html
-                cookie = cookie_mask = 0
-                table_id = 0
-                idle_timeout = hard_timeout = 0
-                priority = 32768
-                buffer_id = ofp.OFP_NO_BUFFER
-                match = ofp_parser.OFPMatch(in_port=sw_port_connected_to_src_host, eth_type=806)
-                actions = [ofp_parser.OFPActionOutput(port=ports[0])]
-                print("\tFF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Actions.port: {3}".format(
-                    l.src.dpid, sw_port_connected_to_src_host,host_eth_dst_addr, ports[0]))
-                # Gets datapath object of the switch with dpid equal to temp_dpid
-                inst = [ofp_parser.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, actions)]
-                req = ofp_parser.OFPFlowMod(dpp, cookie, cookie_mask, table_id,
-                                            ofp.OFPFC_ADD, idle_timeout, hard_timeout, priority, buffer_id,
-                                            ofp.OFPP_ANY, ofp.OFPG_ANY, ofp.OFPFF_SEND_FLOW_REM, match, inst)
-                dpp.send_msg(req)
-
-            if ind == (len(in_link_path)-1):
-                # The variable ports is a list of ports for switch with dpid equal to temp_dpid which the ports
-                # are used in the list of links `in_link_path`
-                portss = self.find_ports_for_dpid(l.dst.dpid, in_link_path)
-                if len(portss) > 1:
-                    print "There should be one port"
-                # Mac address of the destination host
-                host_eth_dst_addr = self.ip_cache.get_hw_address_of_host(in_ip=dst_ip)
-                dppp = self.get_dp_switch_with_id(l.dst.dpid)
-                ofp = dppp.ofproto
-                ofp_parser = dppp.ofproto_parser
-
-                match = ofp_parser.OFPMatch(in_port=portss[0])
-                # The port which destination host is connected to last switch
-                sw_port_connected_to_dst_host = self.ip_cache.get_port_num_connected_to_sw(in_dpid=l.dst.dpid, in_ip=dst_ip)
-                if sw_port_connected_to_dst_host > 0:
-                    actions = [ofp_parser.OFPActionOutput(port=sw_port_connected_to_dst_host)]
-                    print("\tSF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Actions.port: {3}".format(
-                        l.dst.dpid, portss[0], host_eth_dst_addr, sw_port_connected_to_dst_host))
-                    # Gets datapath object of the switch with dpid equal to temp_dpid
-
-                    cookie = cookie_mask = 0
-                    table_id = 0
-                    idle_timeout = hard_timeout = 0
-                    priority = 32768
-                    buffer_id = ofp.OFP_NO_BUFFER
-                    # Gets datapath object of the switch with dpid equal to temp_dpid
-                    inst = [ofp_parser.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, actions)]
-                    req = ofp_parser.OFPFlowMod(dppp, cookie, cookie_mask, table_id,
-                                                ofp.OFPFC_ADD, idle_timeout, hard_timeout, priority, buffer_id,
-                                                ofp.OFPP_ANY, ofp.OFPG_ANY, ofp.OFPFF_SEND_FLOW_REM, match, inst)
-                    dppp.send_msg(req)
-                else:
-                    print("Port Number if neg")
-            else:
-                # Todo: need to add flows for switches in middle
-                pass
-                # Add all flows at once
-
-
 
     def send_midpoint_flows_for_path(self, in_path):
         """
