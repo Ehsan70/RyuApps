@@ -31,9 +31,9 @@ class Simple3PktSwitch(Topo):
 
         # Adding switches
         # s1 = self.addSwitch('s1', dpid="0000000000000001", mac="00:00:00:00:00:11")
-        s1 = self.addSwitch('s1', dpid="0000000000000001")
-        s2 = self.addSwitch('s2', dpid="0000000000000002")
-        s3 = self.addSwitch('s3', dpid="0000000000000003")
+        s1 = self.addSwitch('s1', dpid="0000000000000001", opts=opts)
+        s2 = self.addSwitch('s2', dpid="0000000000000002", opts=opts)
+        s3 = self.addSwitch('s3', dpid="0000000000000003", opts=opts)
 
         # Add links
         self.addLink(h1, s1)
