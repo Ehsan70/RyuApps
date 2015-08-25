@@ -1,3 +1,5 @@
+import textwrap
+
 __author__ = 'Ehsan'
 
 from ryu.base import app_manager
@@ -27,8 +29,7 @@ ETH_ADDRESSES = [0x0802, 0x88CC, 0x8808, 0x8809, 0x0800, 0x86DD, 0x88F7]
 This class is responsible for
 """
 simple_switch_instance_name = 'simple_switch_api_app'
-url = '/simpleswitch/mactable/{dpid}'
-urll = '/mininet/topo/switches/'
+url = '/mininet/topo/'
 class RestHandler(ControllerBase):
     _CONTEXTS = { 'wsgi': WSGIApplication }
 
@@ -36,11 +37,40 @@ class RestHandler(ControllerBase):
         super(RestHandler, self).__init__(req, link, data, **config)
         self.simpl_switch_spp = data[simple_switch_instance_name]
 
-    @route('simpleswitch', urll, methods=['GET'])
-    def list_mac_table(self, req, **kwargs):
+    @route('simpleswitch', url+'switches/', methods=['GET'])
+    def list_switches(self, req, **kwargs):
         simple_switch = self.simpl_switch_spp
-
         body = json.dumps(simple_switch.topo_shape.get_switches_dpid())
+        return Response(content_type='application/json', body=body)
+
+    # Todo: This doesnt work, fix it.
+    @route('simpleswitch', url+'hosts/', methods=['GET'])
+    def list_hosts(self, req, **kwargs):
+        simple_switch = self.simpl_switch_spp
+        body = json.dumps(simple_switch.topo_shape.ip_cache.ip_to_dpid_port, separators=(',',':'))
+        return Response(content_type='application/json', body=body)
+
+    # Todo: This doesnt work, fix it.
+    @route('simpleswitch', url+'switches/{dpid}', methods=['GET'], requirements={'dpid': dpid_lib.DPID_PATTERN})
+    def list_switch_port_mac_addrs(self, req, **kwargs):
+        simple_switch = self.simpl_switch_spp
+        dpid = dpid_lib.str_to_dpid(kwargs['dpid'])
+        body = json.dumps(simple_switch.topo_shape.get_hw_addresses_for_dpid(in_dpid=dpid), separators=(',',':'))
+        return Response(content_type='application/json', body=body)
+
+    @route('simpleswitch', url+'switches/{dpid}/{port}', methods=['GET'],
+           requirements={'dpid': dpid_lib.DPID_PATTERN, 'port': dpid_lib.DPID_PATTERN})
+    def get_switch_port_mac_addr(self, req, **kwargs):
+        simple_switch = self.simpl_switch_spp
+        dpid = dpid_lib.str_to_dpid(kwargs['dpid'])
+        port = dpid_lib.str_to_dpid(kwargs['port'])
+        body = json.dumps(simple_switch.topo_shape.get_hw_address_for_port_of_dpid(in_dpid=dpid, in_port_no=port))
+        return Response(content_type='application/json', body=body)
+
+    @route('simpleswitch', url+"links/", methods=['GET'])
+    def list_links(self, req, **kwargs):
+        simple_switch = self.simpl_switch_spp
+        body = json.dumps(simple_switch.topo_shape.get_links_str())
         return Response(content_type='application/json', body=body)
 
 class AdvanceController13(app_manager.RyuApp):
@@ -109,7 +139,7 @@ class AdvanceController13(app_manager.RyuApp):
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         msg = ev.msg
-        print "#############################################"
+        #print "#############################################"
         datapath = msg.datapath
         dpid = datapath.id
 
@@ -126,15 +156,18 @@ class AdvanceController13(app_manager.RyuApp):
         # This 'if condition' is for learning the ip and mac addresses of hosts as well as .
         pkt_arp = pkt.get_protocol(arp.arp)
         if pkt_arp:
+            print("-------------------------------------------")
             print "datapath id: "+str(dpid)
             print "port: "+str(port)
-            print ("pkt_eth.dst: " + str(pkt_eth.dst))
-            print ("pkt_eth.src: " + str(pkt_eth.src))
-            print ("pkt_arp: " + str(pkt_arp))
-            print ("pkt_arp:src_ip: " + str(pkt_arp.src_ip))
-            print ("pkt_arp:dst_ip: " + str(pkt_arp.dst_ip))
-            print ("pkt_arp:src_mac: " + str(pkt_arp.src_mac))
-            print ("pkt_arp:dst_mac: " + str(pkt_arp.dst_mac))
+            #print ("pkt_eth.dst: " + str(pkt_eth.dst))
+            #print ("pkt_eth.src: " + str(pkt_eth.src))
+            print ("pkt_arp: ")
+            for line in str(pkt_arp).split('),', 1 ):
+                print line
+            #print ("pkt_arp:src_ip: " + str(pkt_arp.src_ip))
+            #print ("pkt_arp:dst_ip: " + str(pkt_arp.dst_ip))
+            #print ("pkt_arp:src_mac: " + str(pkt_arp.src_mac))
+            #print ("pkt_arp:dst_mac: " + str(pkt_arp.dst_mac))
 
             # Destination and source ip address
             d_ip = pkt_arp.dst_ip
@@ -146,7 +179,7 @@ class AdvanceController13(app_manager.RyuApp):
 
             in_port = msg.match['in_port']
 
-            print ("Before ip_cache.ip_to_dpid_port: "+str(self.topo_shape.ip_cache.ip_to_dpid_port))
+            #print ("Before ip_cache.ip_to_dpid_port: "+str(self.topo_shape.ip_cache.ip_to_dpid_port))
             # This is where ip address of hosts is learnt.
             resu = self.topo_shape.ip_cache.get_dpid_for_ip(s_ip)
             print("resu: "+str(resu))
@@ -156,7 +189,6 @@ class AdvanceController13(app_manager.RyuApp):
                              "sw_port_mac":self.topo_shape.get_hw_address_for_port_of_dpid(in_dpid=dpid, in_port_no=in_port)}
                 self.topo_shape.ip_cache.add_dpid_host(in_dpid=dpid, in_host_ip=s_ip, **temp_dict)
             else:
-                print("-------------------------------------------")
                 # IF there is such an entry for ip address s_ip then just update the values
                 self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["sw_port_no"] = in_port
                 # Updating mac: because a host may get disconnected and new host with same ip but different mac connects
@@ -165,7 +197,7 @@ class AdvanceController13(app_manager.RyuApp):
                 self.topo_shape.ip_cache.ip_to_dpid_port[dpid][s_ip]["sw_port_mac"] = self.topo_shape.get_hw_address_for_port_of_dpid(
                     in_dpid=dpid, in_port_no=in_port)
 
-            print ("After ip_cache.ip_to_dpid_port: "+str(self.topo_shape.ip_cache.ip_to_dpid_port))
+            print ("Learned Hosts: "+str(self.topo_shape.ip_cache.ip_to_dpid_port))
 
             d_resu = self.topo_shape.ip_cache.get_dpid_for_ip(d_ip)
             if d_resu != -1:
@@ -214,13 +246,15 @@ class AdvanceController13(app_manager.RyuApp):
                                  src_ip=target_ip_addr,
                                  dst_mac=pkt_arp.src_mac,
                                  dst_ip=pkt_arp.src_ip))
+        self.logger.info("Sending ARP response to dpid {0}:".format(datapath.id))
+        for line in str(pkt).split(' ', 1):
+            print "\t"+line
         self._send_packet(datapath, port, pkt)
 
     def _send_packet(self, datapath, port, pkt):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         pkt.serialize()
-        self.logger.info("To dpid {0} packet-out {1}".format(datapath.id, pkt))
         data = pkt.data
         actions = [parser.OFPActionOutput(port=port)]
         out = parser.OFPPacketOut(datapath=datapath,
@@ -340,7 +374,13 @@ class HostCache(object):
         #print ("t_dpid: "+str(t_dpid))
         return self.ip_to_dpid_port[t_dpid][in_ip]["connected_host_mac"]
 
-    def add_dpid_host(self,in_dpid, in_host_ip, **in_dict):
+    def get_list_ip_addresses(self):
+        out = []
+        for temp_dpid in self.ip_to_dpid_port.keys():
+            out.append(self.get_ip_addresses_connected_to_dpid(in_dpid=temp_dpid))
+        return out
+
+    def add_dpid_host(self, in_dpid, in_host_ip, **in_dict):
         """
         Here is example of **in_dict : {"connected_host_mac":s_mac, "sw_port_no":in_port,
         "sw_port_mac":self.topo_shape.get_hw_address_for_port_of_dpid(in_dpid=dpid, in_port_no=in_port)}
@@ -391,7 +431,7 @@ class HostCache(object):
         """
         for temp_dpid in self.ip_to_dpid_port.keys():
             if ip in self.ip_to_dpid_port[temp_dpid].keys():
-                print "\ttemp_dpid for ip : ".format(str(temp_dpid), ip)
+                #print "\ttemp_dpid for ip : ".format(str(temp_dpid), ip)
                 return temp_dpid
         return -1
 
@@ -521,7 +561,6 @@ class TopoStructure(object):
 
                 # The variable ports is a list of ports for switch with dpid equal to temp_dpid which the ports
                 # are used in the list of links `in_link_path`
-                print("(l.src.dpid: {0})".format(l.src.dpid))
                 src_dpid_ports = self.find_ports_for_dpid(l.src.dpid, in_link_path)
                 if len(src_dpid_ports) > 1:
                     print "There should be one port"
@@ -555,7 +594,7 @@ class TopoStructure(object):
                 sw_port_connected_to_dst_host = self.ip_cache.get_port_num_connected_to_sw(in_dpid=l.dst.dpid, in_ip=dst_ip)
                 if sw_port_connected_to_dst_host > 0:
                     actions = [ofp_parser.OFPActionOutput(port=sw_port_connected_to_dst_host)]
-                    print("\tSF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Match.arp_tpa: {3} Actions.port: {4}".format(
+                    print("\tLF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Match.arp_tpa: {3} Actions.port: {4}".format(
                         dst_dp.id, l.dst.port_no, host_eth_dst_addr, "NONE", sw_port_connected_to_dst_host))
 
                     # Gets datapath object of the switch with dpid equal to temp_dpid
@@ -574,7 +613,7 @@ class TopoStructure(object):
                 match = ofp_parser.OFPMatch(in_port=l.dst.port_no, eth_dst=host_eth_dst_addr)
                 actions = [ofp_parser.OFPActionOutput(port=in_link_path[ind+1].src.port_no)]
                 self.add_flow(mid_dp, 1, match, actions)
-                print("\tSF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Match.arp_tpa: {3} Actions.port: {4}".format(
+                print("\tMF: Adding flow to {0} dpid. Match.in_port: {1} Match.eth_dst: {2} Match.arp_tpa: {3} Actions.port: {4}".format(
                         mid_dp.id, l.dst.port_no, host_eth_dst_addr, "NONE", in_link_path[ind+1].src.port_no))
 
     def send_midpoint_flows_for_path(self, in_path):
@@ -717,6 +756,16 @@ class TopoStructure(object):
             for p in s.ports:
                 print ("\t\t\t " + str(p.hw_addr))
 
+    def get_links_str(self):
+        """
+        Uses the built in __str__ function to print the links saved in the class `topo_raw_links`.
+        Returns a list of link strings
+        """
+        out = []
+        for l in self.topo_raw_links:
+            out.append(str(l))
+        return out
+
     def get_hw_addresses_for_dpid(self, in_dpid):
         """
         For a specific dpid of switch it return a list of mac addresses for each port of that sw.
@@ -727,7 +776,7 @@ class TopoStructure(object):
         for s in self.topo_raw_switches:
             if s.dp.id == in_dpid:
                 for p in s.ports:
-                    list_of_HW_addr.append(p.hw_addr)
+                    list_of_HW_addr.append(str(p.hw_addr))
         return list_of_HW_addr
 
     def get_hw_address_for_port_of_dpid(self, in_dpid, in_port_no):
