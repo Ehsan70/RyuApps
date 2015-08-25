@@ -41,8 +41,7 @@ ETH_ADDRESSES = [0x0802, 0x88CC, 0x8808, 0x8809, 0x0800, 0x86DD, 0x88F7]
 This class is responsible for
 """
 simple_switch_instance_name = 'simple_switch_api_app'
-url = '/simpleswitch/mactable/{dpid}'
-urll = '/mininet/topo/switches/'
+url = '/mininet/topo/'
 class RestHandler(ControllerBase):
     _CONTEXTS = { 'wsgi': WSGIApplication }
 
@@ -50,11 +49,18 @@ class RestHandler(ControllerBase):
         super(RestHandler, self).__init__(req, link, data, **config)
         self.simpl_switch_spp = data[simple_switch_instance_name]
 
-    @route('simpleswitch', urll, methods=['GET'])
-    def list_mac_table(self, req, **kwargs):
+    @route('simpleswitch', url+"switches/", methods=['GET'])
+    def list_switches(self, req, **kwargs):
         simple_switch = self.simpl_switch_spp
 
         body = json.dumps(simple_switch.topo_shape.get_switches_dpid())
+        return Response(content_type='application/json', body=body)
+
+    @route('simpleswitch', url+"links/", methods=['GET'])
+    def list_links(self, req, **kwargs):
+        simple_switch = self.simpl_switch_spp
+
+        body = json.dumps(simple_switch.topo_shape.get_links_str())
         return Response(content_type='application/json', body=body)
 
 """
@@ -409,6 +415,16 @@ class TopoStructure(object):
             print("\t\t\t Printing HW address:")
             for p in s.ports:
                 print ("\t\t\t " + str(p.hw_addr))
+
+    def get_links_str(self):
+        """
+        Uses the built in __str__ function to print the links saved in the class `topo_raw_links`.
+        Returns a list of link strings
+        """
+        out = []
+        for l in self.topo_raw_links:
+            out.append(str(l))
+        return out
 
     def get_hw_addresses_for_dpid(self, in_dpid):
         """
