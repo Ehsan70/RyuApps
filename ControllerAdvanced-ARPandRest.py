@@ -336,8 +336,27 @@ class AdvanceController13(app_manager.RyuApp):
                 print("\t\tNew shortest_path_hubs: {0}"
                       "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
 
-                self.del_flow(dp, None)
+                src_dp = self.topo_shape.get_dp_switch_with_id(first_removed_link.src.dpid)
+                src_host_ip = self.topo_shape.ip_cache.get_ip_addresses_connected_to_dpid(first_removed_link.src.dpid)[0]
+                src_host_mac = self.topo_shape.ip_cache.get_hw_address_of_host(in_ip=src_host_ip)
 
+                dst_dp = self.topo_shape.get_dp_switch_with_id(first_removed_link.dst.dpid)
+                dst_host_ip = self.topo_shape.ip_cache.get_ip_addresses_connected_to_dpid(first_removed_link.dst.dpid)[0]
+                dst_host_mac = self.topo_shape.ip_cache.get_hw_address_of_host(in_ip=dst_host_ip)
+
+                del_src_match = dp.ofproto_parser.OFPMatch(eth_dst=src_host_mac)
+                print("\tDeleting flows in {0} switch with eth_dst equal to {1}".format(src_dp.id, src_host_mac))
+                self.del_flow(datapath=src_dp, match=del_src_match)
+                del_src_match = dp.ofproto_parser.OFPMatch(eth_dst=dst_host_mac)
+                print("\tDeleting flows in {0} switch with eth_dst equal to {1}".format(src_dp.id, src_host_mac))
+                self.del_flow(datapath=src_dp, match=del_src_match)
+
+                del_dst_match = dp.ofproto_parser.OFPMatch(eth_dst=src_host_mac)
+                print("\tDeleting flows in {0} switch with eth_dst equal to {1}".format(dst_dp.id, dst_host_mac))
+                self.del_flow(datapath=dst_dp, match=del_dst_match)
+                del_dst_match = dp.ofproto_parser.OFPMatch(eth_dst=dst_host_mac)
+                print("\tDeleting flows in {0} switch with eth_dst equal to {1}".format(dst_dp.id, dst_host_mac))
+                self.del_flow(datapath=dst_dp, match=del_dst_match)
                 """
                 find_backup_path(): Finds the bakcup path (which contains dpids) for the removed link which is
                     called first_removed_link based on shortest_path_node that is given to find_backup_path()
