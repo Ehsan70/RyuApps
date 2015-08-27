@@ -31,6 +31,7 @@ This class is responsible for
 simple_switch_instance_name = 'simple_switch_api_app'
 url = '/mininet/topo/'
 class RestHandler(ControllerBase):
+    # http://osrg.github.io/ryu-book/en/html/rest_api.html
     _CONTEXTS = { 'wsgi': WSGIApplication }
 
     def __init__(self, req, link, data, **config):
@@ -79,8 +80,6 @@ class AdvanceController13(app_manager.RyuApp):
 
     def __init__(self, *args, **kwargs):
         super(AdvanceController13, self).__init__(*args, **kwargs)
-        # USed for learning switch functioning
-        self.mac_to_port = {}
         # Holds the topology data and structure
         self.topo_shape = TopoStructure()
 
@@ -105,17 +104,22 @@ class AdvanceController13(app_manager.RyuApp):
                                           ofproto.OFPCML_NO_BUFFER)]
         self.add_flow(datapath, 0, match, actions)
 
-    def delete_flow(self, datapath):
+    def del_flow(self, datapath, match):
+        """
+        Source: https://github.com/osrg/ryu-book/blob/master/en/source/sources/simple_switch_lacp_13.py
+        Deletes a flow with the given match on that datapath
+        :param datapath: Datapath of the switch
+        :param match: A match for the flow that is going to be deleted
+        """
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
-        for dst in self.mac_to_port[datapath.id].keys():
-            match = parser.OFPMatch(eth_dst=dst)
-            mod = parser.OFPFlowMod(
-                datapath, command=ofproto.OFPFC_DELETE,
-                out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY,
-                priority=1, match=match)
-            datapath.send_msg(mod)
+        mod = parser.OFPFlowMod(datapath=datapath,
+                                command=ofproto.OFPFC_DELETE,
+                                out_port=ofproto.OFPP_ANY,
+                                out_group=ofproto.OFPG_ANY,
+                                match=match)
+        datapath.send_msg(mod)
 
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
         ofproto = datapath.ofproto
@@ -281,7 +285,7 @@ class AdvanceController13(app_manager.RyuApp):
     @set_ev_cls(event.EventSwitchLeave, [MAIN_DISPATCHER, CONFIG_DISPATCHER, DEAD_DISPATCHER])
     def handler_switch_leave(self, ev):
         # Right now it doesn't do anything usefull
-        self.logger.info("Not tracking Switches, switch leaved.")
+        self.logger.info("Switch left.")
 
     ###################################################################################
     """
@@ -306,6 +310,7 @@ class AdvanceController13(app_manager.RyuApp):
                           port_attr.max_speed))
 
         if port_attr.state == 1:
+            # If true, that port is failed
             tmp_list = []
             first_removed_link = self.topo_shape.link_with_src_and_port(port_attr.port_no, dp.id)
             second_removed_link = self.topo_shape.link_with_dst_and_port(port_attr.port_no, dp.id)
@@ -331,6 +336,8 @@ class AdvanceController13(app_manager.RyuApp):
                 print("\t\tNew shortest_path_hubs: {0}"
                       "\n\t\tNew shortest_path_node: {1}".format(shortest_path_hubs, shortest_path_node))
 
+                self.del_flow(dp, None)
+
                 """
                 find_backup_path(): Finds the bakcup path (which contains dpids) for the removed link which is
                     called first_removed_link based on shortest_path_node that is given to find_backup_path()
@@ -349,7 +356,6 @@ class AdvanceController13(app_manager.RyuApp):
                 first_ip = self.topo_shape.ip_cache.get_ip_addresses_connected_to_dpid(in_dpid=first_sw)[0]
                 last_ip = self.topo_shape.ip_cache.get_ip_addresses_connected_to_dpid(in_dpid=last_sw)[0]
                 self.topo_shape.make_path_between_hosts_in_linklist(src_ip=first_ip, dst_ip=last_ip, in_link_path=result)
-                print ("Second make path")
                 print ("src_ip= {0} dst_ip= {1}".format(last_ip, first_ip))
                 self.topo_shape.print_input_links((reversed(reverted_result)))
                 self.topo_shape.make_path_between_hosts_in_linklist(src_ip=last_ip, dst_ip=first_ip, in_link_path=reverted_result)
