@@ -20,7 +20,7 @@ A basic knowlege of Ryu and OpenFlow is required.
 # 1. Setup
  
 ### a. Run Ryu
-Clone this repo. 
+Run the RYU controller using this command. 
 ```shell
 > sudo ryu-manager --verbose --observe-links <Address of l2.py>
 ```
