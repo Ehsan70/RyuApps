@@ -143,12 +143,11 @@ class AdvanceController13(app_manager.RyuApp):
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         msg = ev.msg
-        #print "#############################################"
         datapath = msg.datapath
         dpid = datapath.id
-
         port = msg.match['in_port']
         pkt = packet.Packet(data=msg.data)
+
         #self.logger.info("packet-in: %s" % (pkt,))
 
         pkt_eth = pkt.get_protocol(ethernet.ethernet)

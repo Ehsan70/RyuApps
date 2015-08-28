@@ -16,25 +16,19 @@ class Simple3PktSwitch(Topo):
     """Simple topology example."""
 
     def __init__(self, **opts):
-        """Create custom topo."""
 
+        """Create custom topo."""
         # Initialize topology
         super(Simple3PktSwitch, self).__init__(**opts)
-        #Topo.__init__(self)
-
         # Add hosts and switches
         h1 = self.addHost('h1')
         h2 = self.addHost('h2')
         h3 = self.addHost('h3')
-
         opts = dict(protocols='OpenFlow13')
-
         # Adding switches
-        # s1 = self.addSwitch('s1', dpid="0000000000000001", mac="00:00:00:00:00:11")
         s1 = self.addSwitch('s1', dpid="0000000000000001", opts=opts)
         s2 = self.addSwitch('s2', dpid="0000000000000002", opts=opts)
         s3 = self.addSwitch('s3', dpid="0000000000000003", opts=opts)
-
         # Add links
         self.addLink(h1, s1)
         self.addLink(h2, s2)
