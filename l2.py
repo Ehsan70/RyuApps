@@ -27,7 +27,7 @@ Ryu packet library. Decoder/Encoder implementations of popular protocols like TC
 """
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
-
+from ryu.lib.packet import ether_types
 from ryu.lib import dpid as dpid_lib
 
 
