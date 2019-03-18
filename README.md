@@ -3,7 +3,10 @@
              
              I have limited time on maintaing this repo. So feel free to create pull requests and add to this repo. 
              Even documenting the errors you had to deal with would be usefull.
-
+# Other resources:
+- Learn how to work with optical and packet typologies using Mininet and LINC-OE: https://github.com/Ehsan70/Mininet_LINC_script
+- Learn how to use POX to interact with the SDN controller: https://github.com/Ehsan70/SDN
+- Learn creating topology, simulating optical and packet link failures: https://github.com/Ehsan70/Link_Failure_in_Mininet_LINC
 
 # RyuApps
 Creates a simple Ryu app using the tutorials and then adds on to it. 
